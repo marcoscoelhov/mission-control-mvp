@@ -115,3 +115,78 @@ Escala ao Monarca somente se:
 - risco grave/danoso
 - conflito de objetivos
 - decisão estratégica inevitável
+
+## Thanos (Oficial) — Engenharia/Implantação
+Entrada: tarefas aprovadas com requisitos claros.
+Saída: código + deploy + notas técnicas + checklist de validação.
+Responsabilidades:
+- implementação backend, integrações e infraestrutura
+- estabilidade, versionamento e confiabilidade
+- documentação técnica mínima para handoff
+
+## Wanda (Oficial) — UI/UX + Frontend
+Entrada: fluxos/telas + contrato de API/back.
+Saída: layout + UI funcional + integração com backend do Thanos.
+Responsabilidades:
+- design e construção do frontend
+- usabilidade, consistência visual e experiência
+- garantir que o produto esteja “bonito e funcional”
+
+## Alfred (Oficial) — Auditor de Fluxo
+Entrada: plano + distribuição de tarefas.
+Saída: auditoria + inconsistências + correções sugeridas ao Stark/Jarvis.
+Responsabilidades:
+- validar se decomposição está completa (sem lacunas)
+- identificar sobreposição, dependências faltando e gargalos
+- manter a engrenagem rodando (evitar travamentos)
+
+## Oráculo (Conselho) — Insights
+Entrada: histórico do board + entregas + falhas + acertos.
+Saída: ideias, sugestões, melhorias e alertas (vira tarefa no board).
+Responsabilidades:
+- detectar padrões e oportunidades
+- propor automações e otimizações
+- sugerir novas formas de gerar receita e aumentar autonomia
+
+---
+
+# Fluxo Principal (Pipeline Oficial)
+1. Entrada: missão chega em inbox
+2. Triage e Plano *(Stark)*:
+   - objetivo, contexto, entregáveis, riscos, dependências
+   - etapas e tarefas com responsáveis
+3. Gate de Aprovação *(Jarvis)*:
+   - aprova/veta/ajusta antes de execução
+4. Execução *(Oficiais)*:
+   - Thanos: backend/código/deploy
+   - Wanda: UI/UX e frontend
+   - Alfred: auditoria do fluxo e redistribuição se necessário
+5. Review *(Jarvis)*: valida entrega vs missão e KPIs
+6. Done: registrar resultado e lições
+7. Melhoria contínua *(Oráculo)*: insights viram novas tarefas no board
+
+---
+
+# Fluxograma Operacional (Visual em Texto)
+```text
+[inbox]
+   ↓
+(Stark) Triage + Plano + Delegação
+   ↓
+(Jarvis) Gate de Aprovação
+   ├─ VETADO → volta para Stark ajustar → (Jarvis) Gate novamente
+   └─ APROVADO → execução
+                 ↓
+      ┌─────────────────────────────┐
+      │ Execução por Oficiais       │
+      │ - Thanos: backend/deploy    │
+      │ - Wanda: UI/UX + frontend   │
+      │ - Alfred: auditoria do fluxo│
+      └─────────────────────────────┘
+                 ↓
+[review] (Jarvis valida entrega vs missão)
+   ↓
+[done]
+   ↓
+(Oráculo) Insights → novas tarefas no board
+```
