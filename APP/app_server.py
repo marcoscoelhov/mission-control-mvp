@@ -165,6 +165,8 @@ def infer_mission_kind(title, desc):
         return 'remove_sitegpt_badge'
     if ('header' in t or 'mission control' in t) and any(k in t for k in ['icone', 'ícone', 'icon']):
         return 'header_brand_icon'
+    if ('sessão live' in t or 'sessao live' in t or 'live panel' in t or 'trackeamento' in t or 'tracking' in t) and ('dashboard' in t or 'task' in t or 'tarefa' in t):
+        return 'live_tracking_center_plan'
     if 'header' in t and ('numero' in t or 'número' in t):
         return 'header_real_numbers'
     if 'chat' in t and 'agente' in t:
@@ -284,6 +286,27 @@ def apply_mission_effect(mission):
 
         if changed:
             index_path.write_text(html, encoding='utf-8')
+
+    elif kind == 'live_tracking_center_plan':
+        plan_path = BASE / 'LIVE_TRACKING_PLAN.md'
+        ts = time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())
+        plan = (
+            '# Live Tracking Center — Plano Operacional\n\n'
+            f'Atualizado em: {ts}\n\n'
+            '## Objetivo\n'
+            'Transformar o painel Live no centro de rastreamento real das tarefas do dashboard.\n\n'
+            '## Estrutura recomendada\n'
+            '1. Fila em tempo real por missão (missionId, owner, status).\n'
+            '2. Prova de execução sempre visível (status/evidence/session).\n'
+            '3. Linha do tempo por missão (from/to, actor, timestamp, reason).\n'
+            '4. Alertas de falha e bloqueio sem proof.\n\n'
+            '## Próximos parafusos\n'
+            '- Corrigir consistência de status (execution.status vs executionStatus).\n'
+            '- Eliminar eventos com missionId unknown.\n'
+            '- Exibir timeline dedicada no Live por missão selecionada.\n'
+        )
+        plan_path.write_text(plan, encoding='utf-8')
+        evidence.append('plano de transformação do Live gerado em APP/LIVE_TRACKING_PLAN.md')
 
     elif kind == 'header_real_numbers':
         html = index_path.read_text(encoding='utf-8')
@@ -554,6 +577,22 @@ def find_mission_ref(data, mission_id):
             if mid == needle:
                 return c, i, m
     return None, None, None
+
+
+def find_mission_id_by_title_unique(data, title):
+    needle = str(title or '').strip().lower()
+    if not needle:
+        return None
+    matches = []
+    for c in data.get('columns', []) or []:
+        for m in c.get('items', []) or []:
+            mt = str(m.get('title', '')).strip().lower()
+            if mt == needle:
+                mid = str(m.get('id') or m.get('cardId') or '').strip()
+                if mid:
+                    matches.append(mid)
+    uniq = list(dict.fromkeys(matches))
+    return uniq[0] if len(uniq) == 1 else None
 
 
 def route_without_proof(data, mission, reason):
@@ -859,6 +898,8 @@ class Handler(SimpleHTTPRequestHandler):
             action = payload.get('action', 'update')
             mission_id = str(payload.get('missionId') or payload.get('cardId') or '').strip()
             title = payload.get('title') or 'Missão sem título'
+            if not mission_id:
+                mission_id = find_mission_id_by_title_unique(data, title) or ''
             if mission_id:
                 idx = data.get('missionIndex', {})
                 idx[mission_id] = mission_id
@@ -872,8 +913,10 @@ class Handler(SimpleHTTPRequestHandler):
                 record_transition(data, mission_id or 'unknown', from_c, to_c, actor=actor, reason='manual_move', title=title, transition_id=transition_id)
                 append_trail_entry(mission_id or 'unknown', title, f"Movida de {from_c} para {to_c}.")
             elif action in ('approve', 'autonomous_approve'):
+                record_transition(data, mission_id or 'unknown', payload.get('fromColumn', '?'), payload.get('toColumn', payload.get('fromColumn', '?')), actor='jarvis', reason='approved', title=title, transition_id=transition_id)
                 append_trail_entry(mission_id or 'unknown', title, 'Aprovada por Jarvis.')
             elif action == 'auto_delegate' and payload.get('title'):
+                record_transition(data, mission_id or 'unknown', 'inbox', 'assigned', actor='stark', reason='auto_delegate', title=title, transition_id=transition_id)
                 append_trail_entry(mission_id or 'unknown', title, 'Delegação automática executada por Stark.')
             elif action == 'autonomous_move':
                 from_col = payload.get('from', '?')

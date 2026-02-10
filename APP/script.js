@@ -401,7 +401,7 @@ function makeTransitionId(prefix = 'tr') {
 
 async function persistBoardState(action, extra = {}) {
   const payload = { action, board: boardState, actor: 'ui', ...extra };
-  if (!payload.transitionId && ['move', 'autonomous_move', 'clarification_reply', 'delete_card'].includes(action)) {
+  if (!payload.transitionId && ['move', 'autonomous_move', 'clarification_reply', 'delete_card', 'approve', 'autonomous_approve', 'effectiveness_reopen', 'effectiveness_ok', 'auto_delegate'].includes(action)) {
     payload.transitionId = makeTransitionId(action);
   }
   return apiPost(API.boardState, payload);
@@ -983,6 +983,12 @@ async function moveOneMission(fromKey, toKey, transform = (x) => x) {
       executionStatus: 'failed',
       needsClarification: false,
       needsUserAction: 'Falta executionProof. Adicione evidências reais antes de concluir.',
+      execution: {
+        ...(item.execution || {}),
+        status: 'failed',
+        updatedAt: Date.now(),
+        endedAt: Date.now(),
+      },
     });
     renderBoard(boardState);
     await persistBoardState('effectiveness_reopen', { missionId: item.id || item.cardId, title: item.title, owner: 'Alfred' });
@@ -1018,7 +1024,7 @@ async function autonomousTick() {
       if (assigned) {
         assigned.items.unshift({ ...item, owner: 'Alfred', approved: true, needsEffectiveness: true });
         renderBoard(boardState);
-        const ok = await persistBoardState('effectiveness_reopen', { title: item.title, owner: 'Alfred' });
+        const ok = await persistBoardState('effectiveness_reopen', { missionId: item.id || item.cardId, title: item.title, owner: 'Alfred' });
         if (STRICT_PERSISTENCE && !ok) {
           showToast('Falha ao persistir reabertura de efetividade');
           restoreBoard(before);
@@ -1042,7 +1048,7 @@ async function autonomousTick() {
       const before = snapshotBoard();
       assigned.items[0] = { ...first, approved: true };
       renderBoard(boardState);
-      const ok = await persistBoardState('autonomous_approve', { title: first.title });
+      const ok = await persistBoardState('autonomous_approve', { missionId: first.id || first.cardId, title: first.title });
       if (STRICT_PERSISTENCE && !ok) {
         showToast('Falha ao persistir aprovação automática no backend');
         restoreBoard(before);
@@ -1069,19 +1075,27 @@ async function autonomousTick() {
           ? ensureColumn('needs_monarca_decision', 'Needs Monarca Decision')
           : ensureColumn('failed', 'Failed');
 
+        const failStatus = status === 'needs_clarification' ? 'failed' : status;
         target.items.unshift({
           ...first,
           effective: false,
           needsEffectiveness: true,
           needsClarification: false,
           owner: 'Alfred',
-          executionStatus: status === 'needs_clarification' ? 'failed' : status,
+          executionStatus: failStatus,
           needsUserAction,
           clarificationAsked: false,
+          execution: {
+            ...(first.execution || {}),
+            status: failStatus,
+            updatedAt: Date.now(),
+            endedAt: Date.now(),
+            evidence: Array.isArray(exec.evidence) ? exec.evidence : (Array.isArray(first.execution?.evidence) ? first.execution.evidence : []),
+          },
         });
 
         renderBoard(boardState);
-        const persisted = await persistBoardState('effectiveness_reopen', { title: first.title, owner: 'Alfred' });
+        const persisted = await persistBoardState('effectiveness_reopen', { missionId: first.id || first.cardId, title: first.title, owner: 'Alfred' });
         if (STRICT_PERSISTENCE && !persisted) restoreBoard(before);
         return;
       }
@@ -1094,7 +1108,7 @@ async function autonomousTick() {
         needsUserAction: '',
       };
       renderBoard(boardState);
-      await persistBoardState('effectiveness_ok', { title: first.title });
+      await persistBoardState('effectiveness_ok', { missionId: first.id || first.cardId, title: first.title });
       addLiveEvent('Efetividade confirmada', `${first.title} validada com evidência real.`, true, { missionKey: first.cardId || makeCardId(first.title), missionTitle: first.title });
       return;
     }
