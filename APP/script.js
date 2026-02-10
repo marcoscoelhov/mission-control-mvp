@@ -1076,8 +1076,13 @@ async function autonomousTick() {
           : ensureColumn('failed', 'Failed');
 
         const failStatus = status === 'needs_clarification' ? 'failed' : status;
+        const failEvidence = Array.isArray(exec.evidence)
+          ? exec.evidence
+          : (Array.isArray(first.execution?.evidence) ? first.execution.evidence : []);
+
         target.items.unshift({
           ...first,
+          kind: exec.kind || first.kind,
           effective: false,
           needsEffectiveness: true,
           needsClarification: false,
@@ -1085,12 +1090,13 @@ async function autonomousTick() {
           executionStatus: failStatus,
           needsUserAction,
           clarificationAsked: false,
+          effectEvidence: failEvidence,
           execution: {
             ...(first.execution || {}),
             status: failStatus,
             updatedAt: Date.now(),
             endedAt: Date.now(),
-            evidence: Array.isArray(exec.evidence) ? exec.evidence : (Array.isArray(first.execution?.evidence) ? first.execution.evidence : []),
+            evidence: failEvidence,
           },
         });
 
@@ -1100,15 +1106,30 @@ async function autonomousTick() {
         return;
       }
 
+      const execEvidence = Array.isArray(exec.evidence)
+        ? exec.evidence
+        : (Array.isArray(exec.execution?.evidence) ? exec.execution.evidence : []);
+
       inProgress.items[0] = {
         ...first,
-        effective: true,
-        needsEffectiveness: false,
-        executionStatus: 'effective',
-        needsUserAction: '',
+        kind: exec.kind || first.kind,
+        effective: Boolean(exec.ok),
+        needsEffectiveness: !Boolean(exec.ok),
+        executionStatus: exec.status || exec.execution?.status || 'effective',
+        needsUserAction: exec.needsUserAction || '',
+        effectEvidence: execEvidence,
+        execution: {
+          ...(first.execution || {}),
+          ...(exec.execution || {}),
+          status: exec.status || exec.execution?.status || 'effective',
+          evidence: execEvidence,
+          updatedAt: Date.now(),
+        },
       };
       renderBoard(boardState);
       await persistBoardState('effectiveness_ok', { missionId: first.id || first.cardId, title: first.title });
+      const dashboardSynced = await loadDashboard();
+      renderBoard(dashboardSynced.columns || fallbackData.columns);
       addLiveEvent('Efetividade confirmada', `${first.title} validada com evidência real.`, true, { missionKey: first.cardId || makeCardId(first.title), missionTitle: first.title });
       return;
     }

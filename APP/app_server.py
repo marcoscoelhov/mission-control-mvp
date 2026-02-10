@@ -459,6 +459,48 @@ def dedupe_board_items(data):
         col['items'] = unique
 
 
+def merge_board_with_canonical(data, incoming_board):
+    existing_by_id = {}
+    for col in data.get('columns', []) or []:
+        for m in col.get('items', []) or []:
+            mid = str(m.get('id') or m.get('cardId') or '').strip()
+            if mid:
+                existing_by_id[mid] = m
+
+    merged_columns = []
+    for col in incoming_board or []:
+        merged_items = []
+        for raw in col.get('items', []) or []:
+            m = dict(raw)
+            mid = ensure_mission_id(m)
+            ex = existing_by_id.get(mid)
+            if ex:
+                merged = {**ex, **m}
+                # Keep canonical mission identity/content from backend to avoid stale UI overwrite
+                for field in ['id', 'cardId', 'title', 'requestedTitle', 'desc', 'kind', 'targetFile', 'expectedChange', 'acceptanceTest', 'triageSource', 'createdAt']:
+                    if field in ex:
+                        merged[field] = ex.get(field)
+
+                # Keep canonical execution proof/state from backend (source of truth)
+                if ex.get('execution') is not None:
+                    merged['execution'] = ex.get('execution')
+                if 'executionStatus' in ex:
+                    merged['executionStatus'] = ex.get('executionStatus')
+                if 'effective' in ex:
+                    merged['effective'] = ex.get('effective')
+                if 'effectEvidence' in ex:
+                    merged['effectEvidence'] = ex.get('effectEvidence')
+                if 'needsUserAction' in ex and ex.get('needsUserAction'):
+                    merged['needsUserAction'] = ex.get('needsUserAction')
+
+                merged_items.append(merged)
+            else:
+                merged_items.append(m)
+        merged_columns.append({'name': col.get('name', ''), 'items': merged_items})
+
+    data['columns'] = merged_columns
+
+
 def build_openclaw_telemetry(data):
     now = now_ms()
     cache = data.setdefault('telemetryCache', {'updatedAt': 0, 'payload': {}})
@@ -909,7 +951,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json(400, {'ok': False, 'error': 'invalid_board'})
 
             data = load_data()
-            data['columns'] = board
+            merge_board_with_canonical(data, board)
             build_mission_index(data)
 
             action = payload.get('action', 'update')
