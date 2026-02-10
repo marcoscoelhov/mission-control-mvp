@@ -139,8 +139,8 @@
 
       <div class="settings-section active">
         <label class="field">
-          <span>Título da missão</span>
-          <input type="text" id="mission-title" placeholder="Ex.: Lançar campanha de retenção" />
+          <span>Título da missão (opcional)</span>
+          <input type="text" id="mission-title" placeholder="Rótulo humano (o sistema nomeia como #task_N)" />
         </label>
         <label class="field">
           <span>Descrição</span>
@@ -157,7 +157,7 @@
           </label>
           <label class="field"><span>Prazo</span><input type="text" id="mission-eta" value="agora" /></label>
         </div>
-        <p class="muted">As missões entram direto no fluxo para execução.</p>
+        <p class="muted">As missões entram direto no fluxo e são nomeadas automaticamente como #task_N.</p>
         <button class="chip active" id="send-broadcast">Enviar missão para Inbox</button>
       </div>
     </aside>
@@ -206,6 +206,6 @@
       </section>
     </aside>
 
-    <script src="./script.js?v=37"></script>
+    <script src="./script.js?v=38"></script>
   </body>
 </html>

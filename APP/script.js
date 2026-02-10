@@ -1200,10 +1200,10 @@ function setupUI() {
   closeBroadcastBtn?.addEventListener('click', () => broadcastDrawer.classList.remove('open'));
 
   sendBroadcastBtn?.addEventListener('click', async () => {
-    const title = missionTitleInput.value.trim();
+    const requestedTitle = missionTitleInput.value.trim();
     const desc = missionDescInput.value.trim();
-    if (!title || !desc) {
-      notify('Preencha título e descrição da missão.');
+    if (!desc) {
+      notify('Preencha a descrição da missão.');
       return;
     }
 
@@ -1219,7 +1219,8 @@ function setupUI() {
       id: missionId,
       missionId,
       cardId: missionId,
-      title,
+      title: requestedTitle || missionId,
+      requestedTitle,
       desc,
       priority,
       owner: 'Stark',
@@ -1237,6 +1238,11 @@ function setupUI() {
       showToast('Falha ao persistir missão no backend');
       return;
     }
+
+    card.id = created.missionId || card.id;
+    card.missionId = card.id;
+    card.cardId = card.id;
+    card.title = created.missionTitle || card.title;
 
     addMissionToInbox(card);
     const boardOk = await persistBoardState('broadcast_inbox', { title: card.title, missionId: card.id || card.cardId });

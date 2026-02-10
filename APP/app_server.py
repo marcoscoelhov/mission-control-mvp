@@ -34,11 +34,18 @@ DEFAULT_DATA = {
     'auditTrail': [],
     'transitionKeys': {},
     'telemetryCache': {'updatedAt': 0, 'payload': {}},
+    'taskSeq': 0,
 }
 
 
 def now_ms():
     return int(time.time() * 1000)
+
+
+def next_task_title(data):
+    seq = int(data.get('taskSeq') or 0) + 1
+    data['taskSeq'] = seq
+    return f"#task_{seq}"
 
 
 def mission_guard_prefix():
@@ -714,8 +721,11 @@ class Handler(SimpleHTTPRequestHandler):
             inbox = get_column(data, 'Inbox', 'Inbox')
 
             mission_id = str(payload.get('id') or payload.get('missionId') or f"m_{uuid.uuid4().hex[:10]}")
-            title = payload.get('title', 'Missão sem título')
-            desc = payload.get('desc', '')
+            requested_title = str(payload.get('title', '')).strip()
+            title = next_task_title(data)
+            desc = str(payload.get('desc', '')).strip()
+            if requested_title:
+                desc = f"[Solicitação: {requested_title}]\n{desc}" if desc else f"[Solicitação: {requested_title}]"
             priority = payload.get('priority', 'p2')
 
             _, _, existing = find_mission_ref(data, mission_id)
@@ -723,6 +733,8 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json(200, {
                     'ok': True,
                     'missionId': mission_id,
+                    'missionTitle': existing.get('title', ''),
+                    'requestedTitle': existing.get('requestedTitle', ''),
                     'dispatched': False,
                     'needsClarification': bool(existing.get('needsClarification')),
                     'triageSource': existing.get('triageSource', 'idempotent'),
@@ -735,6 +747,9 @@ class Handler(SimpleHTTPRequestHandler):
                 **payload,
                 'id': mission_id,
                 'cardId': mission_id,
+                'title': title,
+                'requestedTitle': requested_title,
+                'desc': desc,
                 'kind': triage.get('kind') or infer_mission_kind(title, desc),
                 'owner': triage.get('owner') or payload.get('owner', infer_owner_simple(title, desc)),
                 'confidence': 1.0,
@@ -779,6 +794,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(200, {
                 'ok': True,
                 'missionId': mission['id'],
+                'missionTitle': mission.get('title', ''),
+                'requestedTitle': mission.get('requestedTitle', ''),
                 'dispatched': dispatched,
                 'needsClarification': False,
                 'triageSource': mission.get('triageSource', 'disabled'),
