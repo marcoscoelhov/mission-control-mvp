@@ -61,9 +61,13 @@ def ask_whatsapp_clarification(mission, reason):
     title = mission.get('title', 'Missão sem título')
     desc = mission.get('desc', '')
     msg = (
-        f"[Oráculo] Preciso de contexto para a missão '{title}'. "
-        f"Motivo: {reason}. Descrição atual: {desc}. "
-        f"Responda com: objetivo final, arquivo-alvo e critério de sucesso."
+        f"[Oráculo] Falta contexto para: {title}\n"
+        f"Motivo: {reason}\n"
+        f"Resumo: {desc}\n\n"
+        "Responda neste formato (1 mensagem):\n"
+        "OBJETIVO: ...\n"
+        "ARQUIVO-ALVO: ...\n"
+        "SUCESSO: ..."
     )
     ok = False
     for target in WHATSAPP_TARGETS:
@@ -270,6 +274,28 @@ def apply_mission_effect(mission):
     return True, kind, evidence
 
 
+def should_send_clarification(data, mission):
+    now = int(time.time())
+    mission_id = str(mission.get('id') or mission.get('cardId') or mission.get('title', 'unknown'))
+    digest = f"{mission.get('title','')}|{mission.get('desc','')}".strip().lower()
+
+    data.setdefault('clarificationLocks', {})
+    lock = data['clarificationLocks'].get(mission_id) or {}
+
+    # hard lock: already asked for same mission id
+    if lock.get('asked'):
+        return False
+
+    # soft dedupe: same digest within 30 min
+    last_by_digest = data.setdefault('clarificationDigest', {}).get(digest)
+    if last_by_digest and (now - int(last_by_digest)) < 1800:
+        return False
+
+    data['clarificationLocks'][mission_id] = {'asked': True, 'askedAt': now}
+    data['clarificationDigest'][digest] = now
+    return True
+
+
 def find_mission_ref(data, title=None, card_id=None):
     cols = data.get('columns', [])
     for c in cols:
@@ -372,8 +398,10 @@ class Handler(SimpleHTTPRequestHandler):
                 if clar is None:
                     clar = {'name': 'Needs Clarification', 'items': []}
                     cols.append(clar)
-                sent = ask_whatsapp_clarification(mission, mission.get('missingContext') or 'Contexto insuficiente')
-                mission['clarificationAsked'] = sent
+                can_ask = should_send_clarification(data, mission)
+                sent = ask_whatsapp_clarification(mission, mission.get('missingContext') or 'Contexto insuficiente') if can_ask else False
+                mission['clarificationAsked'] = bool(sent)
+                mission['clarificationSkipped'] = (not can_ask)
                 mission['executionStatus'] = 'needs_clarification'
                 mission['needsUserAction'] = mission.get('missingContext') or 'Responder contexto no WhatsApp.'
                 clar['items'] = [mission] + clar.get('items', [])
@@ -436,8 +464,10 @@ class Handler(SimpleHTTPRequestHandler):
 
             clarification_sent = False
             if status == 'needs_clarification' and not mission.get('clarificationAsked'):
-                clarification_sent = ask_whatsapp_clarification(mission, needs_user_action)
-                mission['clarificationAsked'] = clarification_sent
+                can_ask = should_send_clarification(data, mission)
+                clarification_sent = ask_whatsapp_clarification(mission, needs_user_action) if can_ask else False
+                mission['clarificationAsked'] = bool(clarification_sent)
+                mission['clarificationSkipped'] = (not can_ask)
 
             if col is not None and idx is not None:
                 col['items'][idx] = mission
@@ -447,10 +477,14 @@ class Handler(SimpleHTTPRequestHandler):
             if needs_user_action:
                 append_trail_entry(mission_id, mission.get('title', 'Missão sem título'), f"Ação necessária: {needs_user_action}")
             if status == 'needs_clarification':
+                if mission.get('clarificationSkipped'):
+                    msg = 'Pergunta de clarificação suprimida (anti-spam/idempotência).'
+                else:
+                    msg = 'Oráculo perguntou no WhatsApp o contexto faltante.' if clarification_sent else 'Falha ao enviar pergunta de clarificação no WhatsApp.'
                 append_trail_entry(
                     mission_id,
                     mission.get('title', 'Missão sem título'),
-                    'Oráculo perguntou no WhatsApp o contexto faltante.' if clarification_sent else 'Falha ao enviar pergunta de clarificação no WhatsApp.'
+                    msg
                 )
 
             save_data(data)
