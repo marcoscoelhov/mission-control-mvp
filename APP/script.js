@@ -43,6 +43,7 @@ const saveGeneralBtn = document.getElementById('save-general');
 let draggedCard = null;
 let selectedAgentId = null;
 let refreshTimer = null;
+let autonomyTimer = null;
 let refreshMs = Number(localStorage.getItem('mc_refresh_ms') || 15000);
 let boardState = fallbackData.columns.map((c) => ({ name: c.name, items: [...(c.items || [])] }));
 let inboxMissions = [];
@@ -206,7 +207,10 @@ function refreshInboxChip() {
 
 function addMissionToInbox(card) {
   inboxMissions.unshift(card);
+  const inboxCol = getColumn('inbox');
+  if (inboxCol) inboxCol.items = [...inboxMissions];
   refreshInboxChip();
+  if (localStorage.getItem('mc_autonomous') === '1') autonomousTick();
 }
 
 async function saveAutonomousMode(enabled) {
@@ -214,6 +218,7 @@ async function saveAutonomousMode(enabled) {
   autonomousStatus.textContent = enabled ? 'Modo autônomo ativado.' : 'Modo autônomo desativado.';
   setAutonomousVisuals(enabled);
   addLiveEvent('Modo autônomo', enabled ? 'Ativado' : 'Desativado');
+  if (enabled) autonomousTick();
   for (const req of [{ url: '/api/autonomous/mode', body: { enabled } }, { url: '/api/reinado/ajustes', body: { auto_exec_enabled: enabled } }]) {
     try {
       const res = await fetch(req.url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req.body) });
@@ -454,29 +459,75 @@ function renderBoard(columns) {
   });
 }
 
-function autoDelegateInbox() {
-  const assignedCol = boardState.find((c) => normalizeColumnKey(c.name) === 'assigned');
+function getColumn(key) {
+  return boardState.find((c) => normalizeColumnKey(c.name) === key);
+}
+
+function autoDelegateInbox(silent = false) {
+  const assignedCol = getColumn('assigned');
   if (!assignedCol) return;
 
   const total = inboxMissions.length;
   if (!total) {
-    notify('Inbox está vazio.');
+    if (!silent) notify('Inbox está vazio.');
     return;
   }
 
   const delegated = inboxMissions.map((m) => ({
-    ...m,
+    ...normalizeCard(m),
     owner: inferOwner(`${m.title} ${m.desc}`),
   }));
 
   assignedCol.items = [...delegated, ...(assignedCol.items || [])];
   inboxMissions = [];
-  const inboxCol = boardState.find((c) => normalizeColumnKey(c.name) === 'inbox');
+  const inboxCol = getColumn('inbox');
   if (inboxCol) inboxCol.items = [];
 
   renderBoard(boardState);
-  notify(`Auto-delegação concluída: ${total} missão(ões).`);
+  if (!silent) notify(`Auto-delegação concluída: ${total} missão(ões).`);
   addLiveEvent('Stark auto-delegou inbox', `${total} missão(ões) encaminhadas para Assigned.`);
+}
+
+function moveOneMission(fromKey, toKey, transform = (x) => x) {
+  const from = getColumn(fromKey);
+  const to = getColumn(toKey);
+  if (!from || !to || !(from.items || []).length) return false;
+
+  const item = normalizeCard(from.items.shift());
+  to.items.unshift(transform(item));
+  renderBoard(boardState);
+  addLiveEvent('Fluxo autônomo', `${item.title}: ${prettyColumn(fromKey)} → ${prettyColumn(toKey)}`);
+  return true;
+}
+
+function autonomousTick() {
+  const autonomousOn = localStorage.getItem('mc_autonomous') === '1';
+  if (!autonomousOn) return;
+
+  if (inboxMissions.length) {
+    autoDelegateInbox(true);
+    return;
+  }
+
+  const assigned = getColumn('assigned');
+  if (assigned?.items?.length) {
+    const first = normalizeCard(assigned.items[0]);
+    if (!first.approved) {
+      assigned.items[0] = { ...first, approved: true };
+      renderBoard(boardState);
+      addLiveEvent('Jarvis aprovou missão', first.title);
+      return;
+    }
+    if (moveOneMission('assigned', 'in_progress')) return;
+  }
+
+  if (moveOneMission('in_progress', 'review')) return;
+  moveOneMission('review', 'done');
+}
+
+function startAutonomyLoop() {
+  if (autonomyTimer) clearInterval(autonomyTimer);
+  autonomyTimer = setInterval(autonomousTick, 5000);
 }
 
 function setSettingsTab(tab) {
@@ -583,6 +634,7 @@ async function init() {
   if (agents.length) renderAgents(agents);
   addLiveEvent('Live inicializado', 'Histórico pronto para acompanhar o que foi feito.');
   startRealtimeRefresh();
+  startAutonomyLoop();
 }
 
 init();
