@@ -1,11 +1,37 @@
 {
   "agents": [],
   "columns": [
-    { "name": "Inbox", "items": [] },
-    { "name": "Assigned", "items": [] },
-    { "name": "In Progress", "items": [] },
-    { "name": "Review", "items": [] },
-    { "name": "Done", "items": [] }
+    {
+      "name": "Inbox",
+      "items": []
+    },
+    {
+      "name": "Assigned",
+      "items": []
+    },
+    {
+      "name": "In Progress",
+      "items": []
+    },
+    {
+      "name": "Review",
+      "items": []
+    },
+    {
+      "name": "Done",
+      "items": [
+        {
+          "title": "ui",
+          "desc": "remova sitegpt do header",
+          "owner": "Wanda",
+          "eta": "agora",
+          "impactRevenue": 3,
+          "impactAutonomy": 3,
+          "urgency": 3,
+          "approved": true
+        }
+      ]
+    }
   ],
   "feed": []
 }

@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 import json
+import subprocess
+import time
+import uuid
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent
@@ -16,7 +19,23 @@ DEFAULT_DATA = {
         {'name': 'Done', 'items': []},
     ],
     'feed': [],
+    'autonomous': False,
 }
+
+
+def dispatch_mission_to_openclaw(mission):
+    title = mission.get('title', 'Missão sem título')
+    desc = mission.get('desc', '')
+    text = f"[MISSION CONTROL] Nova missão para execução autônoma: {title}. Contexto: {desc}"
+    try:
+        subprocess.Popen(
+            ['openclaw', 'system', 'event', '--text', text, '--mode', 'now'],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return True
+    except Exception:
+        return False
 
 
 def load_data():
@@ -46,7 +65,8 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == '/api/health':
-            return self._json(200, {'ok': True})
+            data = load_data()
+            return self._json(200, {'ok': True, 'autonomous': bool(data.get('autonomous'))})
         if self.path == '/api/dashboard':
             return self._json(200, load_data())
         return super().do_GET()
@@ -69,9 +89,22 @@ class Handler(SimpleHTTPRequestHandler):
                 inbox = {'name': 'Inbox', 'items': []}
                 cols.insert(0, inbox)
                 data['columns'] = cols
-            inbox['items'] = [payload] + inbox.get('items', [])
+
+            mission = {
+                **payload,
+                'id': payload.get('id') or f"m_{uuid.uuid4().hex[:10]}",
+                'createdAt': int(time.time() * 1000),
+                'executed': False,
+            }
+            inbox['items'] = [mission] + inbox.get('items', [])
+
+            dispatched = False
+            if data.get('autonomous'):
+                dispatched = dispatch_mission_to_openclaw(mission)
+                mission['executed'] = dispatched
+
             save_data(data)
-            return self._json(200, {'ok': True})
+            return self._json(200, {'ok': True, 'missionId': mission['id'], 'dispatched': dispatched})
 
         if self.path == '/api/dashboard/state':
             payload = self._read_json()
@@ -88,7 +121,12 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(200, {'ok': True})
 
         if self.path == '/api/autonomous/mode':
-            return self._json(200, {'ok': True})
+            payload = self._read_json()
+            enabled = bool(payload.get('enabled') or payload.get('auto_exec_enabled'))
+            data = load_data()
+            data['autonomous'] = enabled
+            save_data(data)
+            return self._json(200, {'ok': True, 'enabled': enabled})
 
         return self._json(404, {'ok': False, 'error': 'not found'})
 
