@@ -77,7 +77,7 @@ def ask_whatsapp_clarification(mission, reason):
     desc = mission.get('desc', '')
     missing = mission.get('missingContext') or 'Objetivo final, arquivo-alvo e critério de sucesso'
     msg = (
-        f"[Oráculo] Falta contexto para: {title}\n"
+        f"[Stark] Falta contexto para: {title}\n"
         f"Mission ID: {mission.get('id', 'unknown')}\n"
         f"O que falta: {missing}\n"
         f"Motivo: {reason}\n"
@@ -188,7 +188,7 @@ def infer_owner_simple(title, desc):
 
 
 def triage_with_oraculo(title, desc, priority='p2'):
-    # Oráculo validation disabled by explicit user request.
+    # Validation triage disabled by explicit user request.
     kind = infer_mission_kind(title, desc)
     return {
         'kind': kind,
@@ -203,7 +203,7 @@ def triage_with_oraculo(title, desc, priority='p2'):
     }
 
 
-def normalize_execution(mission, default_agent='Oráculo'):
+def normalize_execution(mission, default_agent='Stark'):
     execution = mission.get('execution') if isinstance(mission.get('execution'), dict) else {}
     evidence = execution.get('evidence', mission.get('effectEvidence', []))
     if not isinstance(evidence, list):
@@ -337,7 +337,7 @@ def ensure_mission_id(mission):
 def ensure_execution_defaults(mission):
     mission_id = ensure_mission_id(mission)
     mission.setdefault('createdAt', now_ms())
-    ex = normalize_execution(mission, default_agent=mission.get('owner', 'Oráculo'))
+    ex = normalize_execution(mission, default_agent=mission.get('owner', 'Stark'))
     if not ex.get('startedAt'):
         ex['startedAt'] = mission.get('createdAt')
     mission['execution'] = ex
@@ -689,7 +689,7 @@ class Handler(SimpleHTTPRequestHandler):
 
             inbox['items'] = [mission] + (inbox.get('items', []) or [])
             record_transition(data, mission['id'], 'broadcast', 'inbox', actor='stark', reason='mission_created', title=mission.get('title', 'Missão sem título'))
-            append_trail_entry(mission['id'], mission.get('title', 'Missão sem título'), 'Missão criada via Broadcast e enviada para Inbox (sem validação Oráculo).')
+            append_trail_entry(mission['id'], mission.get('title', 'Missão sem título'), 'Missão criada via Broadcast e enviada para Inbox.')
 
             build_mission_index(data)
 
@@ -911,7 +911,7 @@ class Handler(SimpleHTTPRequestHandler):
             text = str(payload.get('text', '')).strip()
             if not text:
                 return self._json(400, {'ok': False, 'error': 'empty_text'})
-            from_agent = str(payload.get('from', 'Oráculo')).strip() or 'Oráculo'
+            from_agent = str(payload.get('from', 'Stark')).strip() or 'Stark'
             chat = load_chat()
             msg = {
                 'id': f"c_{uuid.uuid4().hex[:10]}",

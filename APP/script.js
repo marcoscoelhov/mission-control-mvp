@@ -231,7 +231,7 @@ function normalizeCard(item) {
       acceptanceTest: '',
       execution: {
         sessionId: null,
-        agent: 'Oráculo',
+        agent: 'Stark',
         startedAt: Date.now(),
         endedAt: null,
         updatedAt: Date.now(),
@@ -264,7 +264,7 @@ function normalizeCard(item) {
     sessionId: item.sessionId || item.execution?.sessionId || '',
     execution: item.execution || {
       sessionId: item.sessionId || '',
-      agent: item.owner || 'Oráculo',
+      agent: item.owner || 'Stark',
       startedAt: item.createdAt || Date.now(),
       endedAt: null,
       updatedAt: Date.now(),
@@ -608,7 +608,7 @@ function serializeCard(card) {
     sessionId: card.dataset.sessionId || '',
     execution: {
       sessionId: card.dataset.sessionId || '',
-      agent: card.dataset.executionAgent || card.dataset.owner || 'Oráculo',
+      agent: card.dataset.executionAgent || card.dataset.owner || 'Stark',
       startedAt: Number(card.dataset.executionStartedAt || Date.now()),
       endedAt: card.dataset.executionEndedAt ? Number(card.dataset.executionEndedAt) : null,
       updatedAt: Number(card.dataset.executionUpdatedAt || Date.now()),
@@ -644,7 +644,7 @@ function createCard(item, columnKey = '') {
   card.dataset.clarificationAsked = c.clarificationAsked ? '1' : '0';
   card.dataset.clarificationAnswer = c.clarificationAnswer || '';
   card.dataset.sessionId = c.sessionId || c.execution?.sessionId || '';
-  card.dataset.executionAgent = c.execution?.agent || c.owner || 'Oráculo';
+  card.dataset.executionAgent = c.execution?.agent || c.owner || 'Stark';
   card.dataset.executionStartedAt = String(c.execution?.startedAt || Date.now());
   card.dataset.executionEndedAt = c.execution?.endedAt ? String(c.execution.endedAt) : '';
   card.dataset.executionUpdatedAt = String(c.execution?.updatedAt || Date.now());
@@ -658,7 +658,7 @@ function createCard(item, columnKey = '') {
     ? `<span class="chip mini approved">Efetiva</span>`
     : (c.needsEffectiveness ? `<span class="chip mini">Revisão de efetividade</span>` : `<span class="chip mini">Efetividade pendente</span>`);
   const executionBadge = c.executionStatus ? `<span class="chip mini">${escapeHtml(c.executionStatus)}</span>` : '';
-  const oracleBadge = c.clarificationAsked ? `<span class="chip mini">Oráculo perguntou no WhatsApp</span>` : '';
+  const oracleBadge = '';
   const clarifyBtn = '';
   const deleteBtn = `<button class="chip mini danger" data-action="delete">Excluir</button>`;
 
@@ -1164,7 +1164,7 @@ function setupUI() {
   });
   closeChatBtn?.addEventListener('click', () => chatDrawer?.classList.remove('open'));
   sendChatBtn?.addEventListener('click', async () => {
-    const from = (chatFromInput?.value || 'Oráculo').trim();
+    const from = (chatFromInput?.value || 'Stark').trim();
     const text = (chatTextInput?.value || '').trim();
     if (!text) return;
     try {
