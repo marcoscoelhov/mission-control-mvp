@@ -131,3 +131,76 @@ Este arquivo guarda o histórico completo de cada missão (um card por missão).
   - [2026-02-10 19:36:32 UTC] Ação necessária: Missão ambígua. Defina escopo, arquivo-alvo e critério de sucesso.
   - [2026-02-10 19:36:32 UTC] Oráculo perguntou no WhatsApp o contexto faltante.
   - [2026-02-10 19:36:32 UTC] Alfred reabriu a missão para garantir efetividade real antes do Done final.
+
+## CARD m_1770752921921_ioqb7t — Efeitos nos agentes
+- Status: criado
+- Trajeto:
+  - [2026-02-10 19:48:56 UTC] Missão criada via Broadcast e enviada para Inbox.
+
+## CARD Efeitos nos agentes — Efeitos nos agentes
+- Status: criado
+- Trajeto:
+  - [2026-02-10 19:49:07 UTC] Aprovada por Jarvis.
+  - [2026-02-10 19:49:13 UTC] Fluxo autônomo: assigned → in_progress (owner: Alfred).
+  - [2026-02-10 19:49:13 UTC] Despacho real para OpenClaw enviado.
+
+## CARD m_1770752925770_obh4dj — Efeitos nos agentes
+- Status: criado
+- Trajeto:
+  - [2026-02-10 19:49:23 UTC] Missão criada via Broadcast e enviada para Inbox.
+
+## CARD m_1770752928023_u5gahk — Efeitos nos agentes
+- Status: criado
+- Trajeto:
+  - [2026-02-10 19:49:35 UTC] Missão criada via Broadcast e enviada para Inbox.
+  - [2026-02-10 19:49:57 UTC] Execução (manual_required): FALHOU | missão exige execução manual/específica (kind não automatizado)
+  - [2026-02-10 19:49:57 UTC] Ação necessária: Missão ambígua. Defina escopo, arquivo-alvo e critério de sucesso.
+  - [2026-02-10 19:49:57 UTC] Falha ao enviar pergunta de clarificação no WhatsApp.
+  - [2026-02-10 19:50:02 UTC] Execução (manual_required): FALHOU | missão exige execução manual/específica (kind não automatizado)
+  - [2026-02-10 19:50:02 UTC] Ação necessária: Missão ambígua. Defina escopo, arquivo-alvo e critério de sucesso.
+  - [2026-02-10 19:50:02 UTC] Falha ao enviar pergunta de clarificação no WhatsApp.
+  - [2026-02-10 19:50:07 UTC] Execução (manual_required): FALHOU | missão exige execução manual/específica (kind não automatizado)
+  - [2026-02-10 19:50:07 UTC] Ação necessária: Missão ambígua. Defina escopo, arquivo-alvo e critério de sucesso.
+  - [2026-02-10 19:50:07 UTC] Falha ao enviar pergunta de clarificação no WhatsApp.
+  - [2026-02-10 19:50:12 UTC] Execução (manual_required): FALHOU | missão exige execução manual/específica (kind não automatizado)
+  - [2026-02-10 19:50:12 UTC] Ação necessária: Missão ambígua. Defina escopo, arquivo-alvo e critério de sucesso.
+  - [2026-02-10 19:50:12 UTC] Falha ao enviar pergunta de clarificação no WhatsApp.
+  - [2026-02-10 19:50:12 UTC] Alfred reabriu a missão para garantir efetividade real antes do Done final.
+  - [2026-02-10 19:50:12 UTC] Alfred reabriu a missão para garantir efetividade real antes do Done final.
+  - [2026-02-10 19:50:12 UTC] Alfred reabriu a missão para garantir efetividade real antes do Done final.
+  - [2026-02-10 19:50:13 UTC] Alfred reabriu a missão para garantir efetividade real antes do Done final.
+  - [2026-02-10 19:50:17 UTC] Execução (manual_required): FALHOU | missão exige execução manual/específica (kind não automatizado)
+  - [2026-02-10 19:50:17 UTC] Ação necessária: Missão ambígua. Defina escopo, arquivo-alvo e critério de sucesso.
+  - [2026-02-10 19:50:17 UTC] Falha ao enviar pergunta de clarificação no WhatsApp.
+  - [2026-02-10 19:50:17 UTC] Alfred reabriu a missão para garantir efetividade real antes do Done final.
+  - [2026-02-10 19:50:22 UTC] Execução (manual_required): FALHOU | missão exige execução manual/específica (kind não automatizado)
+  - [2026-02-10 19:50:22 UTC] Ação necessária: Missão ambígua. Defina escopo, arquivo-alvo e critério de sucesso.
+  - [2026-02-10 19:50:22 UTC] Falha ao enviar pergunta de clarificação no WhatsApp.
+
+## CARD m_1770752927785_9qsuwd — Efeitos nos agentes
+- Status: criado
+- Trajeto:
+  - [2026-02-10 19:50:22 UTC] Oráculo classificou como ambígua e pediu contexto no WhatsApp.
+  - [2026-02-10 19:50:23 UTC] Alfred reabriu a missão para garantir efetividade real antes do Done final.
+
+## CARD m_1770752930840_55c8tw — Efeitos nos agentes
+- Status: criado
+- Trajeto:
+  - [2026-02-10 19:50:26 UTC] Oráculo classificou como ambígua e pediu contexto no WhatsApp.
+
+## CARD m_1770752931018_txs3pu — Efeitos nos agentes
+- Status: criado
+- Trajeto:
+  - [2026-02-10 19:50:26 UTC] Oráculo classificou como ambígua e pediu contexto no WhatsApp.
+  - [2026-02-10 19:50:38 UTC] Execução (manual_required): FALHOU | missão exige execução manual/específica (kind não automatizado)
+  - [2026-02-10 19:50:38 UTC] Ação necessária: Missão ambígua. Defina escopo, arquivo-alvo e critério de sucesso.
+  - [2026-02-10 19:50:38 UTC] Falha ao enviar pergunta de clarificação no WhatsApp.
+  - [2026-02-10 19:50:38 UTC] Alfred reabriu a missão para garantir efetividade real antes do Done final.
+  - [2026-02-10 19:50:42 UTC] Execução (manual_required): FALHOU | missão exige execução manual/específica (kind não automatizado)
+  - [2026-02-10 19:50:42 UTC] Ação necessária: Missão ambígua. Defina escopo, arquivo-alvo e critério de sucesso.
+  - [2026-02-10 19:50:42 UTC] Falha ao enviar pergunta de clarificação no WhatsApp.
+  - [2026-02-10 19:50:42 UTC] Alfred reabriu a missão para garantir efetividade real antes do Done final.
+  - [2026-02-10 19:50:48 UTC] Execução (manual_required): FALHOU | missão exige execução manual/específica (kind não automatizado)
+  - [2026-02-10 19:50:48 UTC] Ação necessária: Missão ambígua. Defina escopo, arquivo-alvo e critério de sucesso.
+  - [2026-02-10 19:50:48 UTC] Falha ao enviar pergunta de clarificação no WhatsApp.
+  - [2026-02-10 19:50:48 UTC] Alfred reabriu a missão para garantir efetividade real antes do Done final.

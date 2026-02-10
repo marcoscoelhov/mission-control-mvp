@@ -409,6 +409,14 @@ function renderAgents(agents) {
   agentsList.innerHTML = '';
   if (countEl) countEl.textContent = String(agents.length);
 
+  const workOwners = new Set();
+  const inProgress = getColumn('in_progress')?.items || [];
+  const assigned = getColumn('assigned')?.items || [];
+  [...inProgress, ...assigned].forEach((m) => {
+    const n = (normalizeCard(m).owner || '').toLowerCase();
+    if (n) workOwners.add(n);
+  });
+
   const rankWeight = { General: 0, Oficial: 1, Conselho: 2 };
   const ordered = [...agents].sort((a, b) => {
     const wa = rankWeight[a.rank] ?? 99;
@@ -437,13 +445,14 @@ function renderAgents(agents) {
     agentsList.appendChild(header);
 
     list.forEach((agent) => {
-      const statusClass = (agent.status || '').toLowerCase().replace(/\s+/g, '-');
+      const computedStatus = workOwners.has((agent.name || '').toLowerCase()) ? 'trabalhando' : (agent.status || 'online');
+      const statusClass = (computedStatus || '').toLowerCase().replace(/\s+/g, '-');
       const item = document.createElement('article');
       item.className = `agent-item ${agent.id === selectedAgentId ? 'active' : ''}`;
       item.innerHTML = `
         <div class="agent-icon">${escapeHtml(agent.icon)}</div>
         <div class="agent-main"><strong>${escapeHtml(agent.name)}</strong><span>${escapeHtml(agent.role)}</span></div>
-        <div class="status ${escapeHtml(statusClass)}"><span class="status-dot"></span>${escapeHtml(agent.status)}</div>
+        <div class="status ${escapeHtml(statusClass)}"><span class="status-dot"></span>${escapeHtml(computedStatus)}</div>
       `;
       item.addEventListener('click', () => {
         selectedAgentId = agent.id;

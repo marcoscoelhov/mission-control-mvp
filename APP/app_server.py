@@ -375,6 +375,16 @@ class Handler(SimpleHTTPRequestHandler):
             priority = payload.get('priority', 'p2')
             triage = triage_with_oraculo(title, desc, priority)
 
+            # Dashboard-context policy: only clarify when truly ambiguous
+            text_words = len((f"{title} {desc}".strip()).split())
+            needs_clar = bool(triage.get('needsClarification', False))
+            if triage.get('confidence', 0) >= 0.8:
+                needs_clar = False
+            if (triage.get('kind') or infer_mission_kind(title, desc)) != 'manual_required':
+                needs_clar = False
+            if text_words >= 8:
+                needs_clar = False
+
             mission = {
                 **payload,
                 'id': mission_id,
@@ -382,7 +392,7 @@ class Handler(SimpleHTTPRequestHandler):
                 'kind': triage.get('kind') or infer_mission_kind(title, desc),
                 'owner': triage.get('owner') or payload.get('owner', 'Oráculo'),
                 'confidence': triage.get('confidence', 0.5),
-                'needsClarification': triage.get('needsClarification', False),
+                'needsClarification': needs_clar,
                 'missingContext': triage.get('missingContext', ''),
                 'targetFile': triage.get('targetFile') or payload.get('targetFile', ''),
                 'expectedChange': triage.get('expectedChange') or payload.get('expectedChange', ''),
