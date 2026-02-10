@@ -659,8 +659,7 @@ function createCard(item, columnKey = '') {
     : (c.needsEffectiveness ? `<span class="chip mini">Revisão de efetividade</span>` : `<span class="chip mini">Efetividade pendente</span>`);
   const executionBadge = c.executionStatus ? `<span class="chip mini">${escapeHtml(c.executionStatus)}</span>` : '';
   const oracleBadge = c.clarificationAsked ? `<span class="chip mini">Oráculo perguntou no WhatsApp</span>` : '';
-  const shouldClarify = columnKey === 'needs_clarification' || (c.executionStatus || '').toLowerCase() === 'needs_clarification';
-  const clarifyBtn = shouldClarify ? `<button class="chip mini" data-action="clarify">Responder</button>` : '';
+  const clarifyBtn = '';
   const deleteBtn = `<button class="chip mini danger" data-action="delete">Excluir</button>`;
 
   card.innerHTML = `
@@ -710,7 +709,7 @@ function createCard(item, columnKey = '') {
     }
 
     const before = snapshotBoard();
-    const currentCol = card.closest('.column')?.dataset.column || 'needs_clarification';
+    const currentCol = card.closest('.column')?.dataset.column || 'failed';
     const assignedCol = ensureColumn('assigned', 'Assigned');
 
     let moved = null;
@@ -975,14 +974,14 @@ async function moveOneMission(fromKey, toKey, transform = (x) => x) {
   const before = snapshotBoard();
   const item = normalizeCard(from.items.shift());
   if (toKey === 'done' && !hasExecutionProof(item)) {
-    const fallbackKey = String(item.kind || '') === 'manual_required' ? 'needs_clarification' : 'failed';
-    const fallbackLabel = fallbackKey === 'needs_clarification' ? 'Needs Clarification' : 'Failed';
-    const target = ensureColumn(fallbackKey, fallbackLabel);
+    const fallbackKey = 'failed';
+    const target = ensureColumn(fallbackKey, 'Failed');
     target.items.unshift({
       ...item,
       effective: false,
       needsEffectiveness: true,
-      executionStatus: fallbackKey === 'needs_clarification' ? 'needs_clarification' : 'failed',
+      executionStatus: 'failed',
+      needsClarification: false,
       needsUserAction: 'Falta executionProof. Adicione evidências reais antes de concluir.',
     });
     renderBoard(boardState);
@@ -1065,25 +1064,20 @@ async function autonomousTick() {
         const status = exec.status || 'failed';
         const needsUserAction = exec.needsUserAction || 'Defina melhor o escopo e critério de sucesso.';
         addLiveEvent('Execução real falhou', `${first.title} não teve efetividade real (${(exec.evidence || []).join(', ')}).`, true, { missionKey: first.cardId || makeCardId(first.title), missionTitle: first.title });
-        if (status === 'needs_clarification') {
-          addLiveEvent('Oráculo pediu contexto', exec.clarificationSent ? 'Pergunta enviada no WhatsApp do Monarca.' : 'Não consegui enviar pergunta no WhatsApp.', true, { missionKey: first.cardId || makeCardId(first.title), missionTitle: first.title });
-        }
-
         inProgress.items.shift();
-        const target = status === 'needs_clarification'
-          ? ensureColumn('needs_clarification', 'Needs Clarification')
-          : status === 'needs_monarca_decision'
-            ? ensureColumn('needs_monarca_decision', 'Needs Monarca Decision')
-            : ensureColumn('failed', 'Failed');
+        const target = status === 'needs_monarca_decision'
+          ? ensureColumn('needs_monarca_decision', 'Needs Monarca Decision')
+          : ensureColumn('failed', 'Failed');
 
         target.items.unshift({
           ...first,
           effective: false,
           needsEffectiveness: true,
+          needsClarification: false,
           owner: 'Alfred',
-          executionStatus: status,
+          executionStatus: status === 'needs_clarification' ? 'failed' : status,
           needsUserAction,
-          clarificationAsked: Boolean(exec.clarificationSent),
+          clarificationAsked: false,
         });
 
         renderBoard(boardState);
@@ -1214,11 +1208,11 @@ function setupUI() {
       title,
       desc,
       priority,
-      owner: 'Oráculo',
+      owner: 'Stark',
       eta: missionEtaInput.value.trim() || 'agora',
       ...weights,
       approved: false,
-      kind: 'manual_required',
+      kind: '',
       targetFile: '',
       expectedChange: '',
       acceptanceTest: '',
@@ -1230,20 +1224,13 @@ function setupUI() {
       return;
     }
 
-    if (created.needsClarification) {
-      addLiveEvent('Oráculo pediu contexto', 'Missão ambígua: pergunta enviada no WhatsApp.', true, { missionKey: card.cardId, missionTitle: card.title });
-      showToast('Missão ficou em Needs Clarification (WhatsApp)');
-      const dashboard = await loadDashboard();
-      renderBoard(dashboard.columns || fallbackData.columns);
-    } else {
-      addMissionToInbox(card);
-      const boardOk = await persistBoardState('broadcast_inbox', { title: card.title, missionId: card.id || card.cardId });
-      if (STRICT_PERSISTENCE && !boardOk) {
-        showToast('Falha ao persistir estado do board no backend');
-        return;
-      }
-      addLiveEvent('Broadcast recebeu missão', `${card.title} entrou no Inbox para triagem do Stark.`, true, { missionKey: card.cardId || makeCardId(card.title), missionTitle: card.title });
+    addMissionToInbox(card);
+    const boardOk = await persistBoardState('broadcast_inbox', { title: card.title, missionId: card.id || card.cardId });
+    if (STRICT_PERSISTENCE && !boardOk) {
+      showToast('Falha ao persistir estado do board no backend');
+      return;
     }
+    addLiveEvent('Broadcast recebeu missão', `${card.title} entrou no Inbox para execução.`, true, { missionKey: card.cardId || makeCardId(card.title), missionTitle: card.title });
 
     missionTitleInput.value = '';
     missionDescInput.value = '';

@@ -26,7 +26,6 @@ DEFAULT_DATA = {
         {'name': 'Done', 'items': []},
         {'name': 'Blocked', 'items': []},
         {'name': 'Failed', 'items': []},
-        {'name': 'Needs Clarification', 'items': []},
         {'name': 'Needs Monarca Decision', 'items': []},
     ],
     'feed': [],
@@ -107,11 +106,15 @@ def ask_whatsapp_clarification(mission, reason):
 
 def load_data():
     if not DATA_FILE.exists():
-        return json.loads(json.dumps(DEFAULT_DATA))
+        data = json.loads(json.dumps(DEFAULT_DATA))
+        remove_needs_clarification_column(data)
+        return data
     try:
-        return json.loads(DATA_FILE.read_text(encoding='utf-8'))
+        data = json.loads(DATA_FILE.read_text(encoding='utf-8'))
     except Exception:
-        return json.loads(json.dumps(DEFAULT_DATA))
+        data = json.loads(json.dumps(DEFAULT_DATA))
+    remove_needs_clarification_column(data)
+    return data
 
 
 def save_data(data):
@@ -173,56 +176,30 @@ def infer_mission_kind(title, desc):
     return 'manual_required'
 
 
-def triage_with_oraculo(title, desc, priority='p2'):
-    prompt = (
-        "Você é Oráculo do Mission Control. Analise a missão e retorne APENAS JSON com chaves: "
-        "kind, owner, confidence, needsClarification, missingContext, targetFile, expectedChange, acceptanceTest. "
-        "Sem texto extra. "
-        f"Missão: título='{title}', descrição='{desc}', prioridade='{priority}'."
-    )
-    try:
-        r = subprocess.run(
-            ['openclaw', 'agent', '--agent', 'stark', '--message', prompt, '--json', '--timeout', '45'],
-            capture_output=True,
-            text=True,
-            timeout=55,
-        )
-        raw = (r.stdout or '').strip()
-        if r.returncode == 0 and raw:
-            try:
-                data = json.loads(raw)
-                txt = json.dumps(data, ensure_ascii=False)
-            except Exception:
-                txt = raw
-            start = txt.find('{')
-            end = txt.rfind('}')
-            if start >= 0 and end > start:
-                obj = json.loads(txt[start:end+1])
-                return {
-                    'kind': obj.get('kind') or infer_mission_kind(title, desc),
-                    'owner': obj.get('owner') or 'Oráculo',
-                    'confidence': float(obj.get('confidence', 0.6) or 0.6),
-                    'needsClarification': bool(obj.get('needsClarification', False)),
-                    'missingContext': obj.get('missingContext', ''),
-                    'targetFile': obj.get('targetFile', ''),
-                    'expectedChange': obj.get('expectedChange', ''),
-                    'acceptanceTest': obj.get('acceptanceTest', ''),
-                    'source': 'llm',
-                }
-    except Exception:
-        pass
+def infer_owner_simple(title, desc):
+    t = f"{title} {desc}".lower()
+    if any(k in t for k in ['api', 'backend', 'deploy', 'infra', 'server', 'banco', 'db', 'código', 'code', 'integra']):
+        return 'Thanos'
+    if any(k in t for k in ['ui', 'ux', 'frontend', 'front', 'layout', 'página', 'design', 'landing', 'tela', 'header', 'visual', 'icone', 'ícone']):
+        return 'Wanda'
+    if any(k in t for k in ['auditoria', 'auditar', 'gargalo', 'dependên', 'distribui', 'fluxo', 'handoff']):
+        return 'Alfred'
+    return 'Alfred'
 
+
+def triage_with_oraculo(title, desc, priority='p2'):
+    # Oráculo validation disabled by explicit user request.
     kind = infer_mission_kind(title, desc)
     return {
         'kind': kind,
-        'owner': 'Oráculo' if kind == 'manual_required' else ('Wanda' if 'ui' in kind or 'scroll' in kind else 'Alfred'),
-        'confidence': 0.45,
-        'needsClarification': kind == 'manual_required',
-        'missingContext': 'Objetivo final, arquivo-alvo e critério de sucesso',
+        'owner': infer_owner_simple(title, desc),
+        'confidence': 1.0,
+        'needsClarification': False,
+        'missingContext': '',
         'targetFile': '',
         'expectedChange': '',
         'acceptanceTest': '',
-        'source': 'fallback',
+        'source': 'disabled',
     }
 
 
@@ -503,6 +480,37 @@ def get_column(data, key_name, fallback_label=None):
     return col
 
 
+def remove_needs_clarification_column(data):
+    cols = data.get('columns', []) or []
+    move_items = []
+    kept = []
+    for c in cols:
+        if str(c.get('name', '')).lower().strip() == 'needs clarification':
+            move_items.extend(c.get('items', []) or [])
+        else:
+            kept.append(c)
+    data['columns'] = kept
+
+    if move_items:
+        failed = get_column(data, 'Failed', 'Failed')
+        normalized = []
+        for m in move_items:
+            ensure_execution_defaults(m)
+            ex = normalize_execution(m)
+            ex['status'] = 'failed'
+            ex['updatedAt'] = now_ms()
+            if not ex.get('endedAt'):
+                ex['endedAt'] = now_ms()
+            m['execution'] = ex
+            m['executionStatus'] = 'failed'
+            m['effective'] = False
+            m['needsClarification'] = False
+            if not m.get('needsUserAction'):
+                m['needsUserAction'] = 'Missão sem clarificação. Ajuste escopo e reexecute.'
+            normalized.append(m)
+        failed['items'] = normalized + (failed.get('items', []) or [])
+
+
 def find_mission_ref(data, mission_id):
     if not mission_id:
         return None, None, None
@@ -516,26 +524,22 @@ def find_mission_ref(data, mission_id):
 
 
 def route_without_proof(data, mission, reason):
-    needs_clar = str(mission.get('kind') or 'manual_required') == 'manual_required'
-    target = get_column(data, 'Needs Clarification', 'Needs Clarification') if needs_clar else get_column(data, 'Failed', 'Failed')
+    target = get_column(data, 'Failed', 'Failed')
 
     ex = normalize_execution(mission)
-    ex['status'] = 'needs_clarification' if needs_clar else 'failed'
+    ex['status'] = 'failed'
     ex['updatedAt'] = now_ms()
     if not ex.get('endedAt'):
         ex['endedAt'] = now_ms()
     mission['execution'] = ex
     mission['executionStatus'] = ex['status']
     mission['effective'] = False
+    mission['needsClarification'] = False
     mission['needsEffectiveness'] = True
-    mission['needsUserAction'] = (
-        'Falta prova de execução (evidence[] + status effective). Informe objetivo, arquivo-alvo e critério de sucesso.'
-        if needs_clar else
-        'Falta prova de execução (evidence[] + status effective). Reexecutar e anexar evidências reais.'
-    )
+    mission['needsUserAction'] = 'Falta prova de execução (evidence[] + status effective). Reexecutar e anexar evidências reais.'
 
     target['items'] = [mission] + (target.get('items', []) or [])
-    record_transition(data, mission.get('id', 'unknown'), 'done', 'needs_clarification' if needs_clar else 'failed', actor='alfred', reason='missing_execution_proof', title=mission.get('title', 'Missão sem título'))
+    record_transition(data, mission.get('id', 'unknown'), 'done', 'failed', actor='alfred', reason='missing_execution_proof', title=mission.get('title', 'Missão sem título'))
     append_trail_entry(mission.get('id', 'unknown'), mission.get('title', 'Missão sem título'), f"Bloqueado Done sem proof: {reason}")
 
 
@@ -655,63 +659,42 @@ class Handler(SimpleHTTPRequestHandler):
 
             triage = triage_with_oraculo(title, desc, priority)
 
-            text_words = len((f"{title} {desc}".strip()).split())
-            needs_clar = bool(triage.get('needsClarification', False))
-            if triage.get('confidence', 0) >= 0.8:
-                needs_clar = False
-            if (triage.get('kind') or infer_mission_kind(title, desc)) != 'manual_required':
-                needs_clar = False
-            if text_words >= 8:
-                needs_clar = False
-
             mission = {
                 **payload,
                 'id': mission_id,
                 'cardId': mission_id,
                 'kind': triage.get('kind') or infer_mission_kind(title, desc),
-                'owner': triage.get('owner') or payload.get('owner', 'Oráculo'),
-                'confidence': triage.get('confidence', 0.5),
-                'needsClarification': needs_clar,
-                'missingContext': triage.get('missingContext', ''),
+                'owner': triage.get('owner') or payload.get('owner', infer_owner_simple(title, desc)),
+                'confidence': 1.0,
+                'needsClarification': False,
+                'missingContext': '',
                 'targetFile': triage.get('targetFile') or payload.get('targetFile', ''),
                 'expectedChange': triage.get('expectedChange') or payload.get('expectedChange', ''),
                 'acceptanceTest': triage.get('acceptanceTest') or payload.get('acceptanceTest', ''),
-                'triageSource': triage.get('source', 'fallback'),
+                'triageSource': 'disabled',
                 'createdAt': now_ms(),
                 'executed': False,
                 'effective': False,
                 'needsEffectiveness': True,
                 'execution': {
                     'sessionId': None,
-                    'agent': triage.get('owner') or payload.get('owner', 'Oráculo'),
+                    'agent': triage.get('owner') or payload.get('owner', infer_owner_simple(title, desc)),
                     'startedAt': now_ms(),
                     'endedAt': None,
                     'updatedAt': now_ms(),
-                    'status': 'needs_clarification' if needs_clar else 'pending',
+                    'status': 'pending',
                     'evidence': [],
                 },
             }
 
-            if mission.get('needsClarification'):
-                clar = get_column(data, 'Needs Clarification', 'Needs Clarification')
-                can_ask = should_send_clarification(data, mission)
-                sent = ask_whatsapp_clarification(mission, mission.get('missingContext') or 'Contexto insuficiente') if can_ask else False
-                mission['clarificationAsked'] = bool(sent)
-                mission['clarificationSkipped'] = (not can_ask)
-                mission['executionStatus'] = 'needs_clarification'
-                mission['needsUserAction'] = mission.get('missingContext') or 'Responder contexto no WhatsApp.'
-                clar['items'] = [mission] + (clar.get('items', []) or [])
-                record_transition(data, mission['id'], 'broadcast', 'needs_clarification', actor='oraculo', reason='triage_needs_clarification', title=mission.get('title', 'Missão sem título'))
-                append_trail_entry(mission['id'], mission.get('title', 'Missão sem título'), 'Oráculo classificou como ambígua e pediu contexto no WhatsApp.')
-            else:
-                inbox['items'] = [mission] + (inbox.get('items', []) or [])
-                record_transition(data, mission['id'], 'broadcast', 'inbox', actor='stark', reason='mission_created', title=mission.get('title', 'Missão sem título'))
-                append_trail_entry(mission['id'], mission.get('title', 'Missão sem título'), 'Missão criada via Broadcast e enviada para Inbox.')
+            inbox['items'] = [mission] + (inbox.get('items', []) or [])
+            record_transition(data, mission['id'], 'broadcast', 'inbox', actor='stark', reason='mission_created', title=mission.get('title', 'Missão sem título'))
+            append_trail_entry(mission['id'], mission.get('title', 'Missão sem título'), 'Missão criada via Broadcast e enviada para Inbox (sem validação Oráculo).')
 
             build_mission_index(data)
 
             dispatched = False
-            if data.get('autonomous') and not mission.get('needsClarification'):
+            if data.get('autonomous'):
                 dispatched = dispatch_mission_to_openclaw(mission)
                 mission['executed'] = dispatched
                 append_trail_entry(
@@ -725,8 +708,8 @@ class Handler(SimpleHTTPRequestHandler):
                 'ok': True,
                 'missionId': mission['id'],
                 'dispatched': dispatched,
-                'needsClarification': bool(mission.get('needsClarification')),
-                'triageSource': mission.get('triageSource', 'fallback'),
+                'needsClarification': False,
+                'triageSource': mission.get('triageSource', 'disabled'),
             })
 
         if self.path == '/api/missions/proof':
@@ -789,13 +772,13 @@ class Handler(SimpleHTTPRequestHandler):
             ok, kind, evidence = apply_mission_effect(mission)
             mission['kind'] = kind
 
-            status = 'effective' if ok else ('needs_clarification' if kind == 'manual_required' else 'failed')
+            status = 'effective' if ok else 'failed'
             needs_user_action = ''
             if not ok:
                 needs_user_action = (
-                    'Missão ambígua. Defina escopo, arquivo-alvo e critério de sucesso.'
-                    if status == 'needs_clarification' else
                     'Execução técnica falhou. Revisar evidência e ajustar missão.'
+                    if kind != 'manual_required' else
+                    'Escopo manual detectado. Defina arquivo-alvo e critério de sucesso, depois reexecute.'
                 )
 
             ex['status'] = status
@@ -810,11 +793,6 @@ class Handler(SimpleHTTPRequestHandler):
             mission['needsUserAction'] = '' if mission['effective'] else needs_user_action
 
             clarification_sent = False
-            if status == 'needs_clarification' and not mission.get('clarificationAsked'):
-                can_ask = should_send_clarification(data, mission)
-                clarification_sent = ask_whatsapp_clarification(mission, needs_user_action) if can_ask else False
-                mission['clarificationAsked'] = bool(clarification_sent)
-                mission['clarificationSkipped'] = (not can_ask)
 
             if col is not None and idx is not None:
                 col['items'][idx] = mission
@@ -830,7 +808,7 @@ class Handler(SimpleHTTPRequestHandler):
                 'evidence': ex['evidence'],
                 'status': status,
                 'needsUserAction': mission.get('needsUserAction', ''),
-                'clarificationSent': clarification_sent if status == 'needs_clarification' else False,
+                'clarificationSent': False,
                 'missionId': mission['id'],
                 'execution': ex,
             })
