@@ -486,7 +486,8 @@ body {
 }
 
 .settings-drawer,
-.broadcast-drawer {
+.broadcast-drawer,
+.chat-drawer {
   position: fixed;
   right: 16px;
   top: 16px;
@@ -505,8 +506,13 @@ body {
   z-index: 31;
 }
 
+.chat-drawer {
+  z-index: 32;
+}
+
 .settings-drawer.open,
-.broadcast-drawer.open {
+.broadcast-drawer.open,
+.chat-drawer.open {
   transform: translateX(0);
   opacity: 1;
   pointer-events: auto;

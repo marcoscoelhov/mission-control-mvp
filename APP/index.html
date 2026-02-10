@@ -40,7 +40,7 @@
 
         <nav class="tabs">
           <button class="tab active">Active</button>
-          <button class="tab">Chat</button>
+          <button class="tab" id="open-chat">Chat</button>
           <button class="tab" id="open-broadcast">Broadcast</button>
           <button class="tab">Docs</button>
           <button class="header-icon-btn" id="open-settings" aria-label="Abrir configurações" title="Missão, modo autônomo e configurações">⚙</button>
@@ -113,6 +113,23 @@
         </aside>
       </main>
     </div>
+
+    <aside class="chat-drawer glass" id="chat-drawer" aria-hidden="true">
+      <div class="panel-head">
+        <h2>Chat entre agentes</h2>
+        <button class="header-icon-btn" id="close-chat" aria-label="Fechar">✕</button>
+      </div>
+
+      <div class="agent-details" id="chat-feed">
+        <p class="muted">Sem mensagens ainda.</p>
+      </div>
+
+      <div class="settings-section active">
+        <label class="field"><span>De (agente)</span><input type="text" id="chat-from" value="Oráculo" /></label>
+        <label class="field"><span>Mensagem</span><input type="text" id="chat-text" placeholder="Ex.: Jarvis, revise missão #123" /></label>
+        <button class="chip active" id="send-chat">Enviar no chat</button>
+      </div>
+    </aside>
 
     <aside class="broadcast-drawer glass" id="broadcast-drawer" aria-hidden="true">
       <div class="panel-head">
@@ -189,6 +206,6 @@
       </section>
     </aside>
 
-    <script src="./script.js?v=33"></script>
+    <script src="./script.js?v=34"></script>
   </body>
 </html>

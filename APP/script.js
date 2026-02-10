@@ -23,6 +23,13 @@ const openBroadcastBtn = document.getElementById('open-broadcast');
 const broadcastDrawer = document.getElementById('broadcast-drawer');
 const closeBroadcastBtn = document.getElementById('close-broadcast');
 const sendBroadcastBtn = document.getElementById('send-broadcast');
+const openChatBtn = document.getElementById('open-chat');
+const chatDrawer = document.getElementById('chat-drawer');
+const closeChatBtn = document.getElementById('close-chat');
+const chatFeed = document.getElementById('chat-feed');
+const chatFromInput = document.getElementById('chat-from');
+const chatTextInput = document.getElementById('chat-text');
+const sendChatBtn = document.getElementById('send-chat');
 const missionTitleInput = document.getElementById('mission-title');
 const missionDescInput = document.getElementById('mission-desc');
 const missionPriorityInput = document.getElementById('mission-priority');
@@ -358,6 +365,37 @@ async function executeMissionReal(card) {
   } catch (_) {
     return { ok: false, evidence: ['network_fail'] };
   }
+}
+
+async function loadAgentChat() {
+  try {
+    const res = await fetch('/api/chat', { cache: 'no-store' });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data.messages) ? data.messages : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function renderAgentChat(messages) {
+  if (!chatFeed) return;
+  chatFeed.innerHTML = '';
+  if (!messages.length) {
+    chatFeed.innerHTML = '<p class="muted">Sem mensagens ainda.</p>';
+    return;
+  }
+  messages.slice().reverse().forEach((m) => {
+    const item = document.createElement('article');
+    item.className = 'feed-item';
+    item.innerHTML = `<strong>${escapeHtml(m.from || 'Agente')}</strong><p>${escapeHtml(m.text || '')}</p>`;
+    chatFeed.appendChild(item);
+  });
+}
+
+async function refreshAgentChat() {
+  const msgs = await loadAgentChat();
+  renderAgentChat(msgs);
 }
 
 function refreshInboxChip() {
@@ -862,6 +900,7 @@ function startRealtimeRefresh() {
   refreshTimer = setInterval(async () => {
     const agents = await loadAgentsDetails();
     if (agents.length) renderAgents(agents);
+    if (chatDrawer?.classList.contains('open')) await refreshAgentChat();
   }, refreshMs);
 }
 
@@ -888,6 +927,35 @@ function setupUI() {
   openBroadcastBtn?.addEventListener('click', () => {
     broadcastDrawer.classList.add('open');
     settingsDrawer.classList.remove('open');
+    chatDrawer?.classList.remove('open');
+  });
+
+  openChatBtn?.addEventListener('click', async () => {
+    chatDrawer?.classList.add('open');
+    broadcastDrawer?.classList.remove('open');
+    settingsDrawer?.classList.remove('open');
+    await refreshAgentChat();
+  });
+  closeChatBtn?.addEventListener('click', () => chatDrawer?.classList.remove('open'));
+  sendChatBtn?.addEventListener('click', async () => {
+    const from = (chatFromInput?.value || 'Oráculo').trim();
+    const text = (chatTextInput?.value || '').trim();
+    if (!text) return;
+    try {
+      const res = await fetch('/api/chat/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from, text }),
+      });
+      if (!res.ok) {
+        showToast('Falha ao enviar mensagem no chat');
+        return;
+      }
+      chatTextInput.value = '';
+      await refreshAgentChat();
+    } catch (_) {
+      showToast('Falha ao enviar mensagem no chat');
+    }
   });
   closeBroadcastBtn?.addEventListener('click', () => broadcastDrawer.classList.remove('open'));
 
@@ -952,6 +1020,7 @@ function setupUI() {
   openSettingsBtn.addEventListener('click', () => {
     settingsDrawer.classList.add('open');
     broadcastDrawer.classList.remove('open');
+    chatDrawer?.classList.remove('open');
   });
   closeSettingsBtn.addEventListener('click', () => settingsDrawer.classList.remove('open'));
   settingsTabButtons.forEach((btn) => btn.addEventListener('click', () => setSettingsTab(btn.dataset.tab)));

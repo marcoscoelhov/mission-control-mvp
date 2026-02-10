@@ -10,6 +10,7 @@ BASE = Path(__file__).resolve().parent
 DATA_FILE = BASE / 'data.json'
 TRAIL_FILE = BASE / 'MISSOES_TRAJETO.md'
 MISSION_FILE = BASE / 'MISSAO.md'
+CHAT_FILE = BASE / 'agent-chat.json'
 WHATSAPP_TARGETS = ['556699819658', '5566999819658']
 WHATSAPP_CLARIFY_ENABLED = False  # default off to avoid spam; enable only when explicitly needed
 
@@ -103,6 +104,19 @@ def load_data():
 
 def save_data(data):
     DATA_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+
+
+def load_chat():
+    if not CHAT_FILE.exists():
+      return {'messages': []}
+    try:
+      return json.loads(CHAT_FILE.read_text(encoding='utf-8'))
+    except Exception:
+      return {'messages': []}
+
+
+def save_chat(data):
+    CHAT_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
 
 
 def ensure_trail_file():
@@ -345,6 +359,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(200, {'ok': True, 'autonomous': bool(data.get('autonomous'))})
         if self.path == '/api/dashboard':
             return self._json(200, load_data())
+        if self.path == '/api/chat':
+            return self._json(200, load_chat())
         if self.path == '/api/openclaw/agents/details':
             details = BASE / 'openclaw-agents-details.json'
             if details.exists():
@@ -569,6 +585,25 @@ class Handler(SimpleHTTPRequestHandler):
         if self.path == '/api/dashboard/move':
             # movement is persisted by /api/dashboard/state in strict mode
             return self._json(200, {'ok': True})
+
+        if self.path == '/api/chat/send':
+            payload = self._read_json()
+            text = str(payload.get('text', '')).strip()
+            if not text:
+                return self._json(400, {'ok': False, 'error': 'empty_text'})
+            from_agent = str(payload.get('from', 'Oráculo')).strip() or 'Oráculo'
+            chat = load_chat()
+            msg = {
+                'id': f"c_{uuid.uuid4().hex[:10]}",
+                'from': from_agent,
+                'text': text,
+                'at': int(time.time() * 1000),
+            }
+            msgs = chat.get('messages', [])
+            msgs.append(msg)
+            chat['messages'] = msgs[-300:]
+            save_chat(chat)
+            return self._json(200, {'ok': True, 'message': msg})
 
         if self.path == '/api/autonomous/mode':
             payload = self._read_json()
