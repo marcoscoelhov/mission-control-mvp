@@ -29,7 +29,12 @@ DEFAULT_DATA = {
     ],
     'feed': [],
     'autonomous': False,
+    'missionIndex': {},
 }
+
+
+def now_ms():
+    return int(time.time() * 1000)
 
 
 def mission_guard_prefix():
@@ -44,8 +49,9 @@ def dispatch_mission_to_openclaw(mission):
     desc = mission.get('desc', '')
     owner = mission.get('owner', 'Stark')
     guard = mission_guard_prefix()
+    mission_id = mission.get('id', 'unknown')
     text = (
-        f"[MISSION CONTROL] Execução autônoma: {title} | Responsável: {owner}. "
+        f"[MISSION CONTROL] Execução autônoma: {title} | missionId={mission_id} | Responsável: {owner}. "
         f"Contexto: {desc}. {guard}"
     )
     try:
@@ -68,6 +74,7 @@ def ask_whatsapp_clarification(mission, reason):
     missing = mission.get('missingContext') or 'Objetivo final, arquivo-alvo e critério de sucesso'
     msg = (
         f"[Oráculo] Falta contexto para: {title}\n"
+        f"Mission ID: {mission.get('id', 'unknown')}\n"
         f"O que falta: {missing}\n"
         f"Motivo: {reason}\n"
         f"Resumo: {desc}\n\n"
@@ -95,11 +102,11 @@ def ask_whatsapp_clarification(mission, reason):
 
 def load_data():
     if not DATA_FILE.exists():
-        return DEFAULT_DATA.copy()
+        return json.loads(json.dumps(DEFAULT_DATA))
     try:
         return json.loads(DATA_FILE.read_text(encoding='utf-8'))
     except Exception:
-        return DEFAULT_DATA.copy()
+        return json.loads(json.dumps(DEFAULT_DATA))
 
 
 def save_data(data):
@@ -108,11 +115,11 @@ def save_data(data):
 
 def load_chat():
     if not CHAT_FILE.exists():
-      return {'messages': []}
+        return {'messages': []}
     try:
-      return json.loads(CHAT_FILE.read_text(encoding='utf-8'))
+        return json.loads(CHAT_FILE.read_text(encoding='utf-8'))
     except Exception:
-      return {'messages': []}
+        return {'messages': []}
 
 
 def save_chat(data):
@@ -162,7 +169,6 @@ def infer_mission_kind(title, desc):
 
 
 def triage_with_oraculo(title, desc, priority='p2'):
-    """Best-effort LLM triage via OpenClaw agent; falls back safely if unavailable."""
     prompt = (
         "Você é Oráculo do Mission Control. Analise a missão e retorne APENAS JSON com chaves: "
         "kind, owner, confidence, needsClarification, missingContext, targetFile, expectedChange, acceptanceTest. "
@@ -178,7 +184,6 @@ def triage_with_oraculo(title, desc, priority='p2'):
         )
         raw = (r.stdout or '').strip()
         if r.returncode == 0 and raw:
-            # Try parse direct JSON or JSON object embedded in output
             try:
                 data = json.loads(raw)
                 txt = json.dumps(data, ensure_ascii=False)
@@ -202,7 +207,6 @@ def triage_with_oraculo(title, desc, priority='p2'):
     except Exception:
         pass
 
-    # Fallback (only when LLM not reachable)
     kind = infer_mission_kind(title, desc)
     return {
         'kind': kind,
@@ -217,6 +221,36 @@ def triage_with_oraculo(title, desc, priority='p2'):
     }
 
 
+def normalize_execution(mission, default_agent='Oráculo'):
+    execution = mission.get('execution') if isinstance(mission.get('execution'), dict) else {}
+    evidence = execution.get('evidence', mission.get('effectEvidence', []))
+    if not isinstance(evidence, list):
+        evidence = []
+    status = execution.get('status') or mission.get('executionStatus') or 'pending'
+    started = execution.get('startedAt')
+    ended = execution.get('endedAt')
+    normalized = {
+        'sessionId': execution.get('sessionId') or mission.get('sessionId') or None,
+        'agent': execution.get('agent') or mission.get('owner') or default_agent,
+        'startedAt': started,
+        'endedAt': ended,
+        'updatedAt': execution.get('updatedAt') or now_ms(),
+        'status': status,
+        'evidence': [str(x) for x in evidence if str(x).strip()],
+    }
+    mission['execution'] = normalized
+    mission['executionStatus'] = normalized['status']
+    mission['effectEvidence'] = normalized['evidence']
+    mission['effective'] = bool(mission.get('effective')) or normalized['status'] == 'effective'
+    return normalized
+
+
+def has_execution_proof(mission):
+    ex = normalize_execution(mission)
+    status = str(ex.get('status') or '').lower()
+    return status == 'effective' and len(ex.get('evidence') or []) > 0
+
+
 def apply_mission_effect(mission):
     title = mission.get('title', '')
     desc = mission.get('desc', '')
@@ -226,14 +260,12 @@ def apply_mission_effect(mission):
     styles_path = BASE / 'styles.css'
 
     evidence = []
-    changed = False
 
     if kind == 'remove_sitegpt_badge':
         html = index_path.read_text(encoding='utf-8')
         if '<span class="badge">SiteGPT</span>' in html:
             html = html.replace('<span class="badge">SiteGPT</span>', '')
             index_path.write_text(html, encoding='utf-8')
-            changed = True
             evidence.append('badge SiteGPT removida do header')
         else:
             evidence.append('badge SiteGPT já estava removida')
@@ -262,7 +294,6 @@ def apply_mission_effect(mission):
         if target in css:
             css = css.replace(target, '.doc-block pre {\n  margin: 0;\n  white-space: pre-wrap;\n  font-size: 11px;\n  color: #c9d4ea;\n  max-height: none;\n  overflow: visible;\n}')
             styles_path.write_text(css, encoding='utf-8')
-            changed = True
             evidence.append('modo leitura infinita aplicado em .doc-block pre')
         elif 'max-height: none;' in css:
             evidence.append('modo leitura infinita já estava ativo')
@@ -283,7 +314,6 @@ def apply_mission_effect(mission):
             evidence.append('workspace sem trava de altura fixa')
         if changed_local:
             styles_path.write_text(css, encoding='utf-8')
-            changed = True
         else:
             evidence.append('scroll infinito do dashboard já estava ativo')
 
@@ -296,17 +326,14 @@ def apply_mission_effect(mission):
 
 def should_send_clarification(data, mission):
     now = int(time.time())
-    mission_id = str(mission.get('id') or mission.get('cardId') or mission.get('title', 'unknown'))
+    mission_id = str(mission.get('id') or 'unknown')
     digest = f"{mission.get('title','')}|{mission.get('desc','')}".strip().lower()
 
     data.setdefault('clarificationLocks', {})
     lock = data['clarificationLocks'].get(mission_id) or {}
-
-    # hard lock: already asked for same mission id
     if lock.get('asked'):
         return False
 
-    # soft dedupe: same digest within 30 min
     last_by_digest = data.setdefault('clarificationDigest', {}).get(digest)
     if last_by_digest and (now - int(last_by_digest)) < 1800:
         return False
@@ -316,29 +343,93 @@ def should_send_clarification(data, mission):
     return True
 
 
-def find_mission_ref(data, title=None, card_id=None):
+def ensure_mission_id(mission):
+    mid = str(mission.get('id') or '').strip()
+    if not mid:
+        mid = f"m_{uuid.uuid4().hex[:10]}"
+    mission['id'] = mid
+    mission['cardId'] = mid
+    return mid
+
+
+def ensure_execution_defaults(mission):
+    mission_id = ensure_mission_id(mission)
+    mission.setdefault('createdAt', now_ms())
+    ex = normalize_execution(mission, default_agent=mission.get('owner', 'Oráculo'))
+    if not ex.get('startedAt'):
+        ex['startedAt'] = mission.get('createdAt')
+    mission['execution'] = ex
+    return mission_id
+
+
+def build_mission_index(data):
+    idx = {}
+    for col in data.get('columns', []) or []:
+        for mission in col.get('items', []) or []:
+            mid = ensure_mission_id(mission)
+            idx[mid] = mid
+    data['missionIndex'] = idx
+    return idx
+
+
+def get_column(data, key_name, fallback_label=None):
     cols = data.get('columns', [])
-    for c in cols:
-        items = c.get('items', []) or []
-        for i, m in enumerate(items):
-            mc = str(m.get('cardId', '')).strip().lower()
+    lower = key_name.lower().strip()
+    col = next((c for c in cols if str(c.get('name', '')).lower().strip() == lower), None)
+    if col is None and fallback_label:
+        col = {'name': fallback_label, 'items': []}
+        cols.append(col)
+        data['columns'] = cols
+    return col
+
+
+def find_mission_ref(data, mission_id):
+    if not mission_id:
+        return None, None, None
+    needle = str(mission_id).strip().lower()
+    for c in data.get('columns', []) or []:
+        for i, m in enumerate(c.get('items', []) or []):
             mid = str(m.get('id', '')).strip().lower()
-            if card_id:
-                needle = str(card_id).strip().lower()
-                if (mc and mc == needle) or (mid and mid == needle):
-                    return c, i, m
-    # fallback by title only if unique match
-    if title:
-        needle = str(title).strip().lower()
-        matches = []
-        for c in cols:
-            for i, m in enumerate(c.get('items', []) or []):
-                mt = str(m.get('title', '')).strip().lower()
-                if mt and mt == needle:
-                    matches.append((c, i, m))
-        if len(matches) == 1:
-            return matches[0]
+            if mid == needle:
+                return c, i, m
     return None, None, None
+
+
+def route_without_proof(data, mission, reason):
+    needs_clar = str(mission.get('kind') or 'manual_required') == 'manual_required'
+    target = get_column(data, 'Needs Clarification', 'Needs Clarification') if needs_clar else get_column(data, 'Failed', 'Failed')
+
+    ex = normalize_execution(mission)
+    ex['status'] = 'needs_clarification' if needs_clar else 'failed'
+    ex['updatedAt'] = now_ms()
+    if not ex.get('endedAt'):
+        ex['endedAt'] = now_ms()
+    mission['execution'] = ex
+    mission['executionStatus'] = ex['status']
+    mission['effective'] = False
+    mission['needsEffectiveness'] = True
+    mission['needsUserAction'] = (
+        'Falta prova de execução (evidence[] + status effective). Informe objetivo, arquivo-alvo e critério de sucesso.'
+        if needs_clar else
+        'Falta prova de execução (evidence[] + status effective). Reexecutar e anexar evidências reais.'
+    )
+
+    target['items'] = [mission] + (target.get('items', []) or [])
+    append_trail_entry(mission.get('id', 'unknown'), mission.get('title', 'Missão sem título'), f"Bloqueado Done sem proof: {reason}")
+
+
+def enforce_done_proof(data):
+    done = get_column(data, 'Done')
+    if not done:
+        return
+    kept = []
+    for mission in done.get('items', []) or []:
+        ensure_execution_defaults(mission)
+        if has_execution_proof(mission):
+            kept.append(mission)
+        else:
+            route_without_proof(data, mission, 'Card chegou em Done sem executionProof válido')
+    done['items'] = kept
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -358,7 +449,12 @@ class Handler(SimpleHTTPRequestHandler):
             data = load_data()
             return self._json(200, {'ok': True, 'autonomous': bool(data.get('autonomous'))})
         if self.path == '/api/dashboard':
-            return self._json(200, load_data())
+            data = load_data()
+            build_mission_index(data)
+            for c in data.get('columns', []) or []:
+                for m in c.get('items', []) or []:
+                    ensure_execution_defaults(m)
+            return self._json(200, data)
         if self.path == '/api/chat':
             return self._json(200, load_chat())
         if self.path == '/api/openclaw/agents/details':
@@ -384,20 +480,14 @@ class Handler(SimpleHTTPRequestHandler):
             payload = self._read_json()
 
             data = load_data()
-            cols = data.get('columns', [])
-            inbox = next((c for c in cols if c.get('name', '').lower() == 'inbox'), None)
-            if inbox is None:
-                inbox = {'name': 'Inbox', 'items': []}
-                cols.insert(0, inbox)
-                data['columns'] = cols
+            inbox = get_column(data, 'Inbox', 'Inbox')
 
-            mission_id = payload.get('id') or f"m_{uuid.uuid4().hex[:10]}"
+            mission_id = str(payload.get('id') or payload.get('missionId') or f"m_{uuid.uuid4().hex[:10]}")
             title = payload.get('title', 'Missão sem título')
             desc = payload.get('desc', '')
             priority = payload.get('priority', 'p2')
             triage = triage_with_oraculo(title, desc, priority)
 
-            # Dashboard-context policy: only clarify when truly ambiguous
             text_words = len((f"{title} {desc}".strip()).split())
             needs_clar = bool(triage.get('needsClarification', False))
             if triage.get('confidence', 0) >= 0.8:
@@ -410,7 +500,7 @@ class Handler(SimpleHTTPRequestHandler):
             mission = {
                 **payload,
                 'id': mission_id,
-                'cardId': payload.get('cardId') or mission_id,
+                'cardId': mission_id,
                 'kind': triage.get('kind') or infer_mission_kind(title, desc),
                 'owner': triage.get('owner') or payload.get('owner', 'Oráculo'),
                 'confidence': triage.get('confidence', 0.5),
@@ -420,31 +510,36 @@ class Handler(SimpleHTTPRequestHandler):
                 'expectedChange': triage.get('expectedChange') or payload.get('expectedChange', ''),
                 'acceptanceTest': triage.get('acceptanceTest') or payload.get('acceptanceTest', ''),
                 'triageSource': triage.get('source', 'fallback'),
-                'createdAt': int(time.time() * 1000),
+                'createdAt': now_ms(),
                 'executed': False,
+                'effective': False,
+                'needsEffectiveness': True,
+                'execution': {
+                    'sessionId': None,
+                    'agent': triage.get('owner') or payload.get('owner', 'Oráculo'),
+                    'startedAt': now_ms(),
+                    'endedAt': None,
+                    'updatedAt': now_ms(),
+                    'status': 'needs_clarification' if needs_clar else 'pending',
+                    'evidence': [],
+                },
             }
-            # If Oráculo needs clarification, route immediately to clarification lane and ask once on WhatsApp
+
             if mission.get('needsClarification'):
-                inbox['items'] = [m for m in inbox.get('items', []) if str(m.get('id')) != mission['id']]
-                clar = next((c for c in cols if c.get('name', '').lower() == 'needs clarification'), None)
-                if clar is None:
-                    clar = {'name': 'Needs Clarification', 'items': []}
-                    cols.append(clar)
+                clar = get_column(data, 'Needs Clarification', 'Needs Clarification')
                 can_ask = should_send_clarification(data, mission)
                 sent = ask_whatsapp_clarification(mission, mission.get('missingContext') or 'Contexto insuficiente') if can_ask else False
                 mission['clarificationAsked'] = bool(sent)
                 mission['clarificationSkipped'] = (not can_ask)
                 mission['executionStatus'] = 'needs_clarification'
                 mission['needsUserAction'] = mission.get('missingContext') or 'Responder contexto no WhatsApp.'
-                clar['items'] = [mission] + clar.get('items', [])
+                clar['items'] = [mission] + (clar.get('items', []) or [])
                 append_trail_entry(mission['id'], mission.get('title', 'Missão sem título'), 'Oráculo classificou como ambígua e pediu contexto no WhatsApp.')
             else:
-                inbox['items'] = [mission] + inbox.get('items', [])
+                inbox['items'] = [mission] + (inbox.get('items', []) or [])
                 append_trail_entry(mission['id'], mission.get('title', 'Missão sem título'), 'Missão criada via Broadcast e enviada para Inbox.')
 
-            data.setdefault('missionIndex', {})
-            data['missionIndex'][str(mission['id'])] = mission['id']
-            data['missionIndex'][str(mission['cardId'])] = mission['id']
+            build_mission_index(data)
 
             dispatched = False
             if data.get('autonomous') and not mission.get('needsClarification'):
@@ -465,34 +560,85 @@ class Handler(SimpleHTTPRequestHandler):
                 'triageSource': mission.get('triageSource', 'fallback'),
             })
 
-        if self.path == '/api/missions/execute':
+        if self.path == '/api/missions/proof':
             payload = self._read_json()
+            mission_id = str(payload.get('missionId') or '').strip()
+            if not mission_id:
+                return self._json(400, {'ok': False, 'error': 'missing_mission_id'})
+
             data = load_data()
-            title = payload.get('title')
-            card_id = payload.get('cardId')
-            if not card_id:
-                return self._json(400, {'ok': False, 'error': 'missing_card_id'})
-            col, idx, mission = find_mission_ref(data, title=title, card_id=card_id)
+            col, idx, mission = find_mission_ref(data, mission_id)
             if mission is None:
                 return self._json(404, {'ok': False, 'error': 'mission_not_found'})
 
+            ex = normalize_execution(mission)
+            if payload.get('sessionId') is not None:
+                ex['sessionId'] = payload.get('sessionId') or None
+            if payload.get('agent'):
+                ex['agent'] = str(payload.get('agent'))
+            if payload.get('startedAt'):
+                ex['startedAt'] = int(payload.get('startedAt'))
+            if payload.get('endedAt'):
+                ex['endedAt'] = int(payload.get('endedAt'))
+            if payload.get('status'):
+                ex['status'] = str(payload.get('status'))
+
+            incoming = payload.get('evidence')
+            if isinstance(incoming, list):
+                merged = ex.get('evidence', []) + [str(x) for x in incoming if str(x).strip()]
+                ex['evidence'] = list(dict.fromkeys(merged))
+
+            ex['updatedAt'] = now_ms()
+            mission['execution'] = ex
+            mission['executionStatus'] = ex['status']
+            mission['effectEvidence'] = ex.get('evidence', [])
+            mission['effective'] = has_execution_proof(mission)
+            mission['needsEffectiveness'] = not mission['effective']
+            if mission['effective']:
+                mission['needsUserAction'] = ''
+
+            col['items'][idx] = mission
+            append_trail_entry(mission_id, mission.get('title', 'Missão sem título'), f"Proof registrada ({ex['status']}) com {len(ex.get('evidence', []))} evidência(s).")
+            save_data(data)
+            return self._json(200, {'ok': True, 'missionId': mission_id, 'execution': ex, 'effective': mission['effective']})
+
+        if self.path == '/api/missions/execute':
+            payload = self._read_json()
+            mission_id = str(payload.get('missionId') or '').strip()
+            if not mission_id:
+                return self._json(400, {'ok': False, 'error': 'missing_mission_id'})
+
+            data = load_data()
+            col, idx, mission = find_mission_ref(data, mission_id)
+            if mission is None:
+                return self._json(404, {'ok': False, 'error': 'mission_not_found'})
+
+            ex = normalize_execution(mission)
+            ex['startedAt'] = ex.get('startedAt') or now_ms()
+            ex['updatedAt'] = now_ms()
+
             ok, kind, evidence = apply_mission_effect(mission)
             mission['kind'] = kind
-            mission['effective'] = bool(ok)
-            mission['executed'] = bool(ok)
-            mission['effectEvidence'] = evidence
 
-            status = 'effective'
+            status = 'effective' if ok else ('needs_clarification' if kind == 'manual_required' else 'failed')
             needs_user_action = ''
             if not ok:
-                if kind == 'manual_required':
-                    status = 'needs_clarification'
-                    needs_user_action = 'Missão ambígua. Defina escopo, arquivo-alvo e critério de sucesso.'
-                else:
-                    status = 'failed'
-                    needs_user_action = 'Execução técnica falhou. Revisar evidência e ajustar missão.'
+                needs_user_action = (
+                    'Missão ambígua. Defina escopo, arquivo-alvo e critério de sucesso.'
+                    if status == 'needs_clarification' else
+                    'Execução técnica falhou. Revisar evidência e ajustar missão.'
+                )
+
+            ex['status'] = status
+            ex['endedAt'] = now_ms()
+            ex['evidence'] = list(dict.fromkeys((ex.get('evidence') or []) + evidence))
+            mission['execution'] = ex
             mission['executionStatus'] = status
-            mission['needsUserAction'] = needs_user_action
+            mission['effectEvidence'] = ex['evidence']
+            mission['effective'] = has_execution_proof(mission)
+            mission['executed'] = bool(ok)
+            mission['needsEffectiveness'] = not mission['effective']
+            mission['needsUserAction'] = '' if mission['effective'] else needs_user_action
 
             clarification_sent = False
             if status == 'needs_clarification' and not mission.get('clarificationAsked'):
@@ -504,131 +650,86 @@ class Handler(SimpleHTTPRequestHandler):
             if col is not None and idx is not None:
                 col['items'][idx] = mission
 
-            mission_id = mission.get('id') or mission.get('cardId') or mission.get('title', 'unknown')
-            append_trail_entry(mission_id, mission.get('title', 'Missão sem título'), f"Execução ({kind}): {'OK' if ok else 'FALHOU'} | {'; '.join(evidence)}")
-            if needs_user_action:
-                append_trail_entry(mission_id, mission.get('title', 'Missão sem título'), f"Ação necessária: {needs_user_action}")
-            if status == 'needs_clarification':
-                if mission.get('clarificationSkipped'):
-                    msg = 'Pergunta de clarificação suprimida (anti-spam/idempotência).'
-                else:
-                    msg = 'Oráculo perguntou no WhatsApp o contexto faltante.' if clarification_sent else 'Falha ao enviar pergunta de clarificação no WhatsApp.'
-                append_trail_entry(
-                    mission_id,
-                    mission.get('title', 'Missão sem título'),
-                    msg
-                )
+            append_trail_entry(mission['id'], mission.get('title', 'Missão sem título'), f"Execução ({kind}): {'OK' if ok else 'FALHOU'} | {'; '.join(evidence)}")
+            if mission.get('needsUserAction'):
+                append_trail_entry(mission['id'], mission.get('title', 'Missão sem título'), f"Ação necessária: {mission['needsUserAction']}")
 
             save_data(data)
             return self._json(200, {
-                'ok': ok,
+                'ok': mission['effective'],
                 'kind': kind,
-                'evidence': evidence,
+                'evidence': ex['evidence'],
                 'status': status,
-                'needsUserAction': needs_user_action,
+                'needsUserAction': mission.get('needsUserAction', ''),
                 'clarificationSent': clarification_sent if status == 'needs_clarification' else False,
+                'missionId': mission['id'],
+                'execution': ex,
             })
 
         if self.path == '/api/dashboard/state':
             payload = self._read_json()
             board = payload.get('board')
+            if not isinstance(board, list):
+                return self._json(400, {'ok': False, 'error': 'invalid_board'})
+
             data = load_data()
-            if isinstance(board, list):
-                data['columns'] = board
+            data['columns'] = board
+            build_mission_index(data)
 
-                action = payload.get('action', 'update')
-                title = payload.get('title') or 'Missão sem título'
-                card_id = str(payload.get('cardId') or title)
-                mission_id = data.get('missionIndex', {}).get(card_id) or card_id
+            action = payload.get('action', 'update')
+            mission_id = str(payload.get('missionId') or '').strip()
+            title = payload.get('title') or 'Missão sem título'
+            if mission_id:
+                idx = data.get('missionIndex', {})
+                idx[mission_id] = mission_id
 
-                if action == 'move':
-                    append_trail_entry(
-                        mission_id,
-                        title,
-                        f"Movida de {payload.get('fromColumn', '?')} para {payload.get('toColumn', '?')}."
-                    )
-                elif action in ('approve', 'autonomous_approve'):
-                    append_trail_entry(mission_id, title, 'Aprovada por Jarvis.')
-                elif action == 'auto_delegate' and payload.get('title'):
-                    append_trail_entry(mission_id, title, 'Delegação automática executada por Stark.')
-                elif action == 'autonomous_move':
-                    from_col = payload.get('from', '?')
-                    to_col = payload.get('to', '?')
-                    owner = payload.get('owner', 'Stark')
-                    append_trail_entry(
-                        mission_id,
-                        title,
-                        f"Fluxo autônomo: {from_col} → {to_col} (owner: {owner})."
-                    )
-                    if str(to_col).lower() == 'in_progress':
-                        dispatched = dispatch_mission_to_openclaw({
-                            'title': title,
-                            'desc': payload.get('desc', ''),
-                            'owner': owner,
-                        })
-                        append_trail_entry(
-                            mission_id,
-                            title,
-                            'Despacho real para OpenClaw enviado.' if dispatched else 'Falha ao despachar para OpenClaw.'
-                        )
-                elif action == 'broadcast_inbox':
-                    append_trail_entry(mission_id, title, 'Confirmada no estado do board (Inbox).')
-                elif action == 'effectiveness_reopen':
-                    append_trail_entry(mission_id, title, 'Alfred reabriu a missão para garantir efetividade real antes do Done final.')
-                elif action == 'effectiveness_ok':
-                    append_trail_entry(mission_id, title, 'Efetividade real validada; liberada para seguir no fluxo.')
-                elif action == 'clarification_reply':
-                    append_trail_entry(
-                        mission_id,
-                        title,
-                        f"Monarca respondeu clarificação; missão movida de {payload.get('fromColumn', '?')} para {payload.get('toColumn', '?')}."
-                    )
-                    clar = str(payload.get('clarification', '')).strip()
-                    if clar:
-                        append_trail_entry(mission_id, title, f"Contexto recebido: {clar[:600]}")
-                elif action == 'delete_card':
-                    append_trail_entry(
-                        mission_id,
-                        title,
-                        f"Card removido manualmente da coluna {payload.get('fromColumn', '?')}."
-                    )
-                    idx_map = data.get('missionIndex', {})
-                    cid = str(payload.get('cardId') or '')
-                    if cid and isinstance(idx_map, dict):
-                        idx_map.pop(cid, None)
+            if action == 'move':
+                append_trail_entry(mission_id or 'unknown', title, f"Movida de {payload.get('fromColumn', '?')} para {payload.get('toColumn', '?')}.")
+            elif action in ('approve', 'autonomous_approve'):
+                append_trail_entry(mission_id or 'unknown', title, 'Aprovada por Jarvis.')
+            elif action == 'auto_delegate' and payload.get('title'):
+                append_trail_entry(mission_id or 'unknown', title, 'Delegação automática executada por Stark.')
+            elif action == 'autonomous_move':
+                from_col = payload.get('from', '?')
+                to_col = payload.get('to', '?')
+                owner = payload.get('owner', 'Stark')
+                append_trail_entry(mission_id or 'unknown', title, f"Fluxo autônomo: {from_col} → {to_col} (owner: {owner}).")
+                if str(to_col).lower() == 'in_progress':
+                    dispatched = dispatch_mission_to_openclaw({'id': mission_id, 'title': title, 'desc': payload.get('desc', ''), 'owner': owner})
+                    append_trail_entry(mission_id or 'unknown', title, 'Despacho real para OpenClaw enviado.' if dispatched else 'Falha ao despachar para OpenClaw.')
+            elif action == 'clarification_reply':
+                append_trail_entry(mission_id or 'unknown', title, f"Monarca respondeu clarificação; missão movida de {payload.get('fromColumn', '?')} para {payload.get('toColumn', '?')}.")
+                clar = str(payload.get('clarification', '')).strip()
+                if clar:
+                    append_trail_entry(mission_id or 'unknown', title, f"Contexto recebido: {clar[:600]}")
+            elif action == 'delete_card':
+                append_trail_entry(mission_id or 'unknown', title, f"Card removido manualmente da coluna {payload.get('fromColumn', '?')}.")
 
-                save_data(data)
-                return self._json(200, {'ok': True, 'trailFile': '/MISSOES_TRAJETO.md'})
-            return self._json(400, {'ok': False, 'error': 'invalid board'})
+            enforce_done_proof(data)
+            save_data(data)
+            return self._json(200, {'ok': True, 'trailFile': '/MISSOES_TRAJETO.md'})
 
         if self.path == '/api/dashboard/move':
-            # movement is persisted by /api/dashboard/state in strict mode
             return self._json(200, {'ok': True})
 
         if self.path == '/api/cards/delete':
             payload = self._read_json()
-            card_id = str(payload.get('cardId') or '').strip()
-            title = str(payload.get('title') or '').strip()
-            if not card_id and not title:
-                return self._json(400, {'ok': False, 'error': 'missing_card_ref'})
+            mission_id = str(payload.get('missionId') or '').strip()
+            if not mission_id:
+                return self._json(400, {'ok': False, 'error': 'missing_mission_id'})
 
             data = load_data()
             removed = False
             removed_from = []
-            mission_id = None
 
             for col in data.get('columns', []) or []:
                 items = col.get('items', []) or []
                 kept = []
                 for m in items:
-                    mc = str(m.get('cardId') or m.get('id') or '').strip()
-                    mt = str(m.get('title') or '').strip().lower()
-                    by_id = bool(card_id and mc and mc == card_id)
-                    by_title = bool((not card_id) and title and mt == title.lower())
-                    if by_id or by_title:
+                    mid = str(m.get('id') or '').strip()
+                    if mid == mission_id:
                         removed = True
                         removed_from.append(str(col.get('name') or '?'))
-                        mission_id = mission_id or str(m.get('id') or m.get('cardId') or title or 'unknown')
                         continue
                     kept.append(m)
                 col['items'] = kept
@@ -636,18 +737,11 @@ class Handler(SimpleHTTPRequestHandler):
             if not removed:
                 return self._json(404, {'ok': False, 'error': 'card_not_found'})
 
-            idx_map = data.get('missionIndex', {})
-            if isinstance(idx_map, dict):
-                if card_id:
-                    idx_map.pop(card_id, None)
-                if title:
-                    idx_map.pop(title, None)
+            idx = data.get('missionIndex', {})
+            if isinstance(idx, dict):
+                idx.pop(mission_id, None)
 
-            append_trail_entry(
-                mission_id or (card_id or title or 'unknown'),
-                title or 'Missão sem título',
-                f"Card removido manualmente (endpoint dedicado) das colunas: {', '.join(removed_from)}."
-            )
+            append_trail_entry(mission_id, payload.get('title') or 'Missão sem título', f"Card removido manualmente (endpoint dedicado) das colunas: {', '.join(removed_from)}.")
             save_data(data)
             return self._json(200, {'ok': True, 'removedFrom': removed_from})
 
@@ -662,7 +756,7 @@ class Handler(SimpleHTTPRequestHandler):
                 'id': f"c_{uuid.uuid4().hex[:10]}",
                 'from': from_agent,
                 'text': text,
-                'at': int(time.time() * 1000),
+                'at': now_ms(),
             }
             msgs = chat.get('messages', [])
             msgs.append(msg)

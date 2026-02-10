@@ -70,6 +70,13 @@ const normalizeColumnKey = (name = '') => name.toLowerCase().trim().replace(/\s+
 const prettyColumn = (key = '') => key.replaceAll('_', ' ').replace(/\b\w/g, (m) => m.toUpperCase());
 const makeCardId = (title = '') => `card_${title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')}`;
 const makeMissionId = () => `m_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+const hasExecutionProof = (cardLike = {}) => {
+  const c = normalizeCard(cardLike);
+  const ex = c.execution || {};
+  const evidence = Array.isArray(ex.evidence) ? ex.evidence : [];
+  const status = String(ex.status || c.executionStatus || '').toLowerCase();
+  return status === 'effective' && evidence.length > 0;
+};
 const escapeHtml = (s = '') => String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 
 function notify(msg) {
@@ -216,10 +223,20 @@ function normalizeCard(item) {
       targetFile: '',
       expectedChange: '',
       acceptanceTest: '',
+      execution: {
+        sessionId: null,
+        agent: 'Oráculo',
+        startedAt: Date.now(),
+        endedAt: null,
+        updatedAt: Date.now(),
+        status: 'pending',
+        evidence: [],
+      },
     };
   }
   return {
-    cardId: item.cardId || makeCardId(item.title || 'sem_titulo'),
+    id: item.id || item.missionId || item.cardId || makeMissionId(),
+    cardId: item.id || item.missionId || item.cardId || makeMissionId(),
     title: item.title || 'Sem título',
     desc: item.desc || '',
     owner: item.owner || 'Stark',
@@ -238,6 +255,16 @@ function normalizeCard(item) {
     acceptanceTest: item.acceptanceTest || '',
     clarificationAsked: Boolean(item.clarificationAsked),
     clarificationAnswer: item.clarificationAnswer || '',
+    sessionId: item.sessionId || item.execution?.sessionId || '',
+    execution: item.execution || {
+      sessionId: item.sessionId || '',
+      agent: item.owner || 'Oráculo',
+      startedAt: item.createdAt || Date.now(),
+      endedAt: null,
+      updatedAt: Date.now(),
+      status: item.executionStatus || 'pending',
+      evidence: Array.isArray(item.effectEvidence) ? item.effectEvidence : [],
+    },
   };
 }
 
@@ -354,12 +381,12 @@ async function persistBoardState(action, extra = {}) {
   return apiPost(API.boardState, { action, board: boardState, ...extra });
 }
 
-async function deleteCardReal(cardId, title = '') {
+async function deleteCardReal(missionId, title = '') {
   try {
     const res = await fetch('/api/cards/delete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cardId, title }),
+      body: JSON.stringify({ missionId, title }),
     });
     if (!res.ok) return { ok: false };
     const data = await res.json();
@@ -374,7 +401,7 @@ async function executeMissionReal(card) {
     const res = await fetch('/api/missions/execute', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: card.title, cardId: card.cardId }),
+      body: JSON.stringify({ missionId: card.id || card.cardId }),
     });
     if (!res.ok) return { ok: false, evidence: ['endpoint_fail'] };
     return await res.json();
@@ -529,6 +556,8 @@ function renderAgents(agents) {
 
 function serializeCard(card) {
   return {
+    id: card.dataset.missionId || card.dataset.cardId,
+    cardId: card.dataset.missionId || card.dataset.cardId,
     title: card.dataset.title,
     desc: card.dataset.desc,
     owner: card.dataset.owner,
@@ -547,6 +576,16 @@ function serializeCard(card) {
     acceptanceTest: card.dataset.acceptanceTest || '',
     clarificationAsked: card.dataset.clarificationAsked === '1',
     clarificationAnswer: card.dataset.clarificationAnswer || '',
+    sessionId: card.dataset.sessionId || '',
+    execution: {
+      sessionId: card.dataset.sessionId || '',
+      agent: card.dataset.executionAgent || card.dataset.owner || 'Oráculo',
+      startedAt: Number(card.dataset.executionStartedAt || Date.now()),
+      endedAt: card.dataset.executionEndedAt ? Number(card.dataset.executionEndedAt) : null,
+      updatedAt: Number(card.dataset.executionUpdatedAt || Date.now()),
+      status: card.dataset.executionStatus || 'pending',
+      evidence: (() => { try { return JSON.parse(card.dataset.executionEvidence || '[]'); } catch (_) { return []; } })(),
+    },
   };
 }
 
@@ -555,7 +594,8 @@ function createCard(item, columnKey = '') {
   const card = document.createElement('article');
   card.className = 'card';
   card.draggable = true;
-  card.dataset.cardId = c.cardId || makeCardId(c.title);
+  card.dataset.missionId = c.id || c.cardId || makeMissionId();
+  card.dataset.cardId = card.dataset.missionId;
   card.dataset.title = c.title;
   card.dataset.desc = c.desc;
   card.dataset.owner = c.owner;
@@ -574,6 +614,12 @@ function createCard(item, columnKey = '') {
   card.dataset.acceptanceTest = c.acceptanceTest || '';
   card.dataset.clarificationAsked = c.clarificationAsked ? '1' : '0';
   card.dataset.clarificationAnswer = c.clarificationAnswer || '';
+  card.dataset.sessionId = c.sessionId || c.execution?.sessionId || '';
+  card.dataset.executionAgent = c.execution?.agent || c.owner || 'Oráculo';
+  card.dataset.executionStartedAt = String(c.execution?.startedAt || Date.now());
+  card.dataset.executionEndedAt = c.execution?.endedAt ? String(c.execution.endedAt) : '';
+  card.dataset.executionUpdatedAt = String(c.execution?.updatedAt || Date.now());
+  card.dataset.executionEvidence = JSON.stringify(Array.isArray(c.execution?.evidence) ? c.execution.evidence : (Array.isArray(c.effectEvidence) ? c.effectEvidence : []));
 
   const score = priorityScore(c);
   const approveBtn = c.approved
@@ -612,7 +658,7 @@ function createCard(item, columnKey = '') {
     card.dataset.approved = '1';
     const row = card.querySelector('.approve-row');
     if (row) row.innerHTML = `<span class="chip mini approved">Aprovado</span>`;
-    const ok = await persistBoardState('approve', { cardId: card.dataset.cardId, title: card.dataset.title });
+    const ok = await persistBoardState('approve', { missionId: card.dataset.missionId || card.dataset.cardId, title: card.dataset.title });
     if (STRICT_PERSISTENCE && !ok) {
       showToast('Falha ao persistir aprovação no backend');
       restoreBoard(before);
@@ -711,8 +757,8 @@ function createCard(item, columnKey = '') {
 
     renderBoard(boardState);
 
-    const del = await deleteCardReal(card.dataset.cardId, card.dataset.title || '');
-    const okState = await persistBoardState('delete_card', { cardId: card.dataset.cardId, title: card.dataset.title, fromColumn });
+    const del = await deleteCardReal(card.dataset.missionId || card.dataset.cardId, card.dataset.title || '');
+    const okState = await persistBoardState('delete_card', { missionId: card.dataset.missionId || card.dataset.cardId, title: card.dataset.title, fromColumn });
 
     if (STRICT_PERSISTENCE && (!del.ok || !okState)) {
       showToast('Falha ao excluir card no backend');
@@ -806,6 +852,14 @@ function renderBoard(columns) {
         return;
       }
 
+      if (toColumn === 'done') {
+        const cardData = serializeCard(draggedCard);
+        if (!hasExecutionProof(cardData)) {
+          showToast('Done bloqueado: falta executionProof (status effective + evidence).');
+          return;
+        }
+      }
+
       const siblings = [...cards.querySelectorAll('.card:not(.dragging)')];
       const next = siblings.find((s) => e.clientY <= s.getBoundingClientRect().top + s.offsetHeight / 2);
       if (next) cards.insertBefore(draggedCard, next); else cards.appendChild(draggedCard);
@@ -890,10 +944,26 @@ async function moveOneMission(fromKey, toKey, transform = (x) => x) {
 
   const before = snapshotBoard();
   const item = normalizeCard(from.items.shift());
+  if (toKey === 'done' && !hasExecutionProof(item)) {
+    const fallbackKey = String(item.kind || '') === 'manual_required' ? 'needs_clarification' : 'failed';
+    const fallbackLabel = fallbackKey === 'needs_clarification' ? 'Needs Clarification' : 'Failed';
+    const target = ensureColumn(fallbackKey, fallbackLabel);
+    target.items.unshift({
+      ...item,
+      effective: false,
+      needsEffectiveness: true,
+      executionStatus: fallbackKey === 'needs_clarification' ? 'needs_clarification' : 'failed',
+      needsUserAction: 'Falta executionProof. Adicione evidências reais antes de concluir.',
+    });
+    renderBoard(boardState);
+    await persistBoardState('effectiveness_reopen', { missionId: item.id || item.cardId, title: item.title, owner: 'Alfred' });
+    addLiveEvent('Done bloqueado sem proof', `${item.title} foi redirecionada para ${prettyColumn(fallbackKey)}.`, true, { missionKey: item.id || item.cardId, missionTitle: item.title });
+    return true;
+  }
   to.items.unshift(transform(item));
   renderBoard(boardState);
 
-  const ok = await persistBoardState('autonomous_move', { title: item.title, desc: item.desc, owner: item.owner, from: fromKey, to: toKey });
+  const ok = await persistBoardState('autonomous_move', { missionId: item.id || item.cardId, title: item.title, desc: item.desc, owner: item.owner, from: fromKey, to: toKey });
   if (STRICT_PERSISTENCE && !ok) {
     showToast('Falha ao persistir fluxo autônomo no backend');
     restoreBoard(before);
@@ -1109,6 +1179,7 @@ function setupUI() {
     const missionId = makeMissionId();
     const card = {
       id: missionId,
+      missionId,
       cardId: missionId,
       title,
       desc,
@@ -1136,7 +1207,7 @@ function setupUI() {
       renderBoard(dashboard.columns || fallbackData.columns);
     } else {
       addMissionToInbox(card);
-      const boardOk = await persistBoardState('broadcast_inbox', { title: card.title, cardId: card.cardId });
+      const boardOk = await persistBoardState('broadcast_inbox', { title: card.title, missionId: card.id || card.cardId });
       if (STRICT_PERSISTENCE && !boardOk) {
         showToast('Falha ao persistir estado do board no backend');
         return;
