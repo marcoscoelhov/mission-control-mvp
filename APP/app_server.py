@@ -605,6 +605,52 @@ class Handler(SimpleHTTPRequestHandler):
             # movement is persisted by /api/dashboard/state in strict mode
             return self._json(200, {'ok': True})
 
+        if self.path == '/api/cards/delete':
+            payload = self._read_json()
+            card_id = str(payload.get('cardId') or '').strip()
+            title = str(payload.get('title') or '').strip()
+            if not card_id and not title:
+                return self._json(400, {'ok': False, 'error': 'missing_card_ref'})
+
+            data = load_data()
+            removed = False
+            removed_from = []
+            mission_id = None
+
+            for col in data.get('columns', []) or []:
+                items = col.get('items', []) or []
+                kept = []
+                for m in items:
+                    mc = str(m.get('cardId') or m.get('id') or '').strip()
+                    mt = str(m.get('title') or '').strip().lower()
+                    by_id = bool(card_id and mc and mc == card_id)
+                    by_title = bool((not card_id) and title and mt == title.lower())
+                    if by_id or by_title:
+                        removed = True
+                        removed_from.append(str(col.get('name') or '?'))
+                        mission_id = mission_id or str(m.get('id') or m.get('cardId') or title or 'unknown')
+                        continue
+                    kept.append(m)
+                col['items'] = kept
+
+            if not removed:
+                return self._json(404, {'ok': False, 'error': 'card_not_found'})
+
+            idx_map = data.get('missionIndex', {})
+            if isinstance(idx_map, dict):
+                if card_id:
+                    idx_map.pop(card_id, None)
+                if title:
+                    idx_map.pop(title, None)
+
+            append_trail_entry(
+                mission_id or (card_id or title or 'unknown'),
+                title or 'Missão sem título',
+                f"Card removido manualmente (endpoint dedicado) das colunas: {', '.join(removed_from)}."
+            )
+            save_data(data)
+            return self._json(200, {'ok': True, 'removedFrom': removed_from})
+
         if self.path == '/api/chat/send':
             payload = self._read_json()
             text = str(payload.get('text', '')).strip()

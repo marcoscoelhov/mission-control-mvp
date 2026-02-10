@@ -354,6 +354,21 @@ async function persistBoardState(action, extra = {}) {
   return apiPost(API.boardState, { action, board: boardState, ...extra });
 }
 
+async function deleteCardReal(cardId, title = '') {
+  try {
+    const res = await fetch('/api/cards/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cardId, title }),
+    });
+    if (!res.ok) return { ok: false };
+    const data = await res.json();
+    return { ok: Boolean(data.ok), ...data };
+  } catch (_) {
+    return { ok: false };
+  }
+}
+
 async function executeMissionReal(card) {
   try {
     const res = await fetch('/api/missions/execute', {
@@ -695,12 +710,18 @@ function createCard(item, columnKey = '') {
     }
 
     renderBoard(boardState);
-    const ok = await persistBoardState('delete_card', { cardId: card.dataset.cardId, title: card.dataset.title, fromColumn });
-    if (STRICT_PERSISTENCE && !ok) {
+
+    const del = await deleteCardReal(card.dataset.cardId, card.dataset.title || '');
+    const okState = await persistBoardState('delete_card', { cardId: card.dataset.cardId, title: card.dataset.title, fromColumn });
+
+    if (STRICT_PERSISTENCE && (!del.ok || !okState)) {
       showToast('Falha ao excluir card no backend');
       restoreBoard(before);
       return;
     }
+
+    const dashboard = await loadDashboard();
+    renderBoard(dashboard.columns || fallbackData.columns);
 
     addLiveEvent('Card excluído', `${card.dataset.title} removido de ${prettyColumn(fromColumn)}.`, true, {
       missionKey: card.dataset.cardId || card.dataset.title,
