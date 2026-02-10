@@ -86,6 +86,8 @@ def infer_mission_kind(title, desc):
         return 'header_real_numbers'
     if 'chat' in t and 'agente' in t:
         return 'agent_chat_toggle'
+    if ('tela infinita' in t or 'scroll infinito' in t) and ('dashboard' in t or 'painel' in t):
+        return 'dashboard_infinite_scroll'
     if 'tela infinita' in t or ('infinita' in t and 'leitura' in t):
         return 'infinite_reading'
     return 'manual_required'
@@ -143,6 +145,23 @@ def apply_mission_effect(mission):
         else:
             evidence.append('bloco alvo de leitura infinita não encontrado')
             return False, kind, evidence
+
+    elif kind == 'dashboard_infinite_scroll':
+        css = styles_path.read_text(encoding='utf-8')
+        changed_local = False
+        if 'body {\n  overflow: hidden;\n}' in css:
+            css = css.replace('body {\n  overflow: hidden;\n}', 'body {\n  overflow: auto;\n}')
+            changed_local = True
+            evidence.append('overflow global do body alterado para auto (scroll infinito)')
+        if '.workspace {\n  display: grid;' in css and 'min-height: calc(100vh - 116px);' in css:
+            css = css.replace('min-height: calc(100vh - 116px);', 'min-height: max-content;')
+            changed_local = True
+            evidence.append('workspace sem trava de altura fixa')
+        if changed_local:
+            styles_path.write_text(css, encoding='utf-8')
+            changed = True
+        else:
+            evidence.append('scroll infinito do dashboard já estava ativo')
 
     else:
         evidence.append('missão exige execução manual/específica (kind não automatizado)')
