@@ -204,6 +204,8 @@ function normalizeCard(item) {
       impactAutonomy: 3,
       urgency: 3,
       approved: owner === 'Thanos' || owner === 'Wanda' || owner === 'Alfred',
+      effective: false,
+      needsEffectiveness: false,
     };
   }
   return {
@@ -216,6 +218,8 @@ function normalizeCard(item) {
     impactAutonomy: Number(item.impactAutonomy ?? 3),
     urgency: Number(item.urgency ?? 3),
     approved: Boolean(item.approved),
+    effective: Boolean(item.effective),
+    needsEffectiveness: Boolean(item.needsEffectiveness),
   };
 }
 
@@ -435,6 +439,8 @@ function serializeCard(card) {
     impactAutonomy: Number(card.dataset.impactAutonomy || 0),
     urgency: Number(card.dataset.urgency || 0),
     approved: card.dataset.approved === '1',
+    effective: card.dataset.effective === '1',
+    needsEffectiveness: card.dataset.needsEffectiveness === '1',
   };
 }
 
@@ -452,11 +458,16 @@ function createCard(item) {
   card.dataset.impactAutonomy = String(c.impactAutonomy);
   card.dataset.urgency = String(c.urgency);
   card.dataset.approved = c.approved ? '1' : '0';
+  card.dataset.effective = c.effective ? '1' : '0';
+  card.dataset.needsEffectiveness = c.needsEffectiveness ? '1' : '0';
 
   const score = priorityScore(c);
   const approveBtn = c.approved
     ? `<span class="chip mini approved">Aprovado</span>`
     : `<button class="chip mini" data-action="approve">Aprovar (Jarvis)</button>`;
+  const effectiveness = c.effective
+    ? `<span class="chip mini approved">Efetiva</span>`
+    : (c.needsEffectiveness ? `<span class="chip mini">Revisão de efetividade</span>` : `<span class="chip mini">Efetividade pendente</span>`);
 
   card.innerHTML = `
     <h3>${escapeHtml(c.title)}</h3>
@@ -471,7 +482,7 @@ function createCard(item) {
       <span>${escapeHtml(c.owner)}</span>
       <span>${escapeHtml(c.eta)} ago</span>
     </div>
-    <div class="approve-row">${approveBtn}</div>
+    <div class="approve-row">${approveBtn} ${effectiveness}</div>
   `;
 
   card.querySelector('[data-action="approve"]')?.addEventListener('click', async (e) => {
@@ -657,6 +668,29 @@ async function autonomousTick() {
   const autonomousOn = localStorage.getItem('mc_autonomous') === '1';
   if (!autonomousOn) return;
 
+  // 0) Garantia Alfred: se algo caiu em done sem efetividade, reabre para Alfred
+  const doneCol = getColumn('done');
+  if (doneCol?.items?.length) {
+    const idx = doneCol.items.findIndex((x) => !normalizeCard(x).effective);
+    if (idx >= 0) {
+      const before = snapshotBoard();
+      const item = normalizeCard(doneCol.items.splice(idx, 1)[0]);
+      const assigned = getColumn('assigned');
+      if (assigned) {
+        assigned.items.unshift({ ...item, owner: 'Alfred', approved: true, needsEffectiveness: true });
+        renderBoard(boardState);
+        const ok = await persistBoardState('effectiveness_reopen', { title: item.title, owner: 'Alfred' });
+        if (STRICT_PERSISTENCE && !ok) {
+          showToast('Falha ao persistir reabertura de efetividade');
+          restoreBoard(before);
+          return;
+        }
+        addLiveEvent('Alfred reabriu missão', `${item.title} voltou para Assigned por falta de efetividade.`, true, { missionKey: item.cardId || makeCardId(item.title), missionTitle: item.title });
+        return;
+      }
+    }
+  }
+
   if (inboxMissions.length) {
     await autoDelegateInbox(true);
     return;
@@ -682,6 +716,16 @@ async function autonomousTick() {
   }
 
   if (await moveOneMission('in_progress', 'review')) return;
+
+  const review = getColumn('review');
+  if (review?.items?.length) {
+    review.items[0] = {
+      ...normalizeCard(review.items[0]),
+      effective: true,
+      needsEffectiveness: false,
+    };
+  }
+
   await moveOneMission('review', 'done');
 }
 

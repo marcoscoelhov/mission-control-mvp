@@ -21,6 +21,28 @@
       "name": "Done",
       "items": [
         {
+          "cardId": "card_tela_infinita",
+          "title": "tela infinita",
+          "desc": "tela infinita para leitura",
+          "owner": "Wanda",
+          "eta": "agora",
+          "impactRevenue": 3,
+          "impactAutonomy": 3,
+          "urgency": 3,
+          "approved": true
+        },
+        {
+          "cardId": "card_chat",
+          "title": "chat",
+          "desc": "ative o chat entre agentes",
+          "owner": "Alfred",
+          "eta": "agora",
+          "impactRevenue": 3,
+          "impactAutonomy": 3,
+          "urgency": 3,
+          "approved": true
+        },
+        {
           "cardId": "card_header",
           "title": "header",
           "desc": "numeros reais no header",
@@ -56,6 +78,8 @@
   ],
   "feed": [],
   "missionIndex": {
-    "card_header": "m_2b12c1e170"
+    "card_header": "m_2b12c1e170",
+    "card_chat": "m_11f6d3e7c8",
+    "card_tela_infinita": "m_f8217dfa10"
   }
 }

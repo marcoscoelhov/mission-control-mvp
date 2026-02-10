@@ -188,6 +188,8 @@ class Handler(SimpleHTTPRequestHandler):
                         )
                 elif action == 'broadcast_inbox':
                     append_trail_entry(mission_id, title, 'Confirmada no estado do board (Inbox).')
+                elif action == 'effectiveness_reopen':
+                    append_trail_entry(mission_id, title, 'Alfred reabriu a missão para garantir efetividade real antes do Done final.')
 
                 save_data(data)
                 return self._json(200, {'ok': True, 'trailFile': '/MISSOES_TRAJETO.md'})
