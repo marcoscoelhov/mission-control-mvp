@@ -75,10 +75,13 @@
           <div class="kanban" id="kanban"></div>
         </section>
 
-        <aside class="panel glass live-panel">
+        <aside class="panel glass live-panel collapsed" id="live-panel">
           <div class="panel-head">
             <h2>Live</h2>
-            <span class="live-dot">●</span>
+            <div class="live-actions">
+              <span class="live-dot">●</span>
+              <button class="collapse-btn" id="toggle-live" aria-label="Expandir Live">⟨</button>
+            </div>
           </div>
 
           <div class="live-toolbar">

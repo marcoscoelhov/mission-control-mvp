@@ -161,6 +161,11 @@ body {
   gap: 12px;
   grid-template-columns: 300px 1fr 320px;
   min-height: calc(100vh - 116px);
+  transition: grid-template-columns 0.28s ease;
+}
+
+.workspace.live-collapsed {
+  grid-template-columns: 300px 1fr 72px;
 }
 
 .panel {
@@ -334,6 +339,24 @@ body {
   text-shadow: 0 0 10px #8dffcf;
 }
 
+.live-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.collapse-btn {
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.05);
+  color: #dce4f6;
+  border-radius: 8px;
+  width: 24px;
+  height: 24px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
 .live-toolbar {
   display: flex;
   gap: 8px;
@@ -345,6 +368,30 @@ body {
   display: grid;
   gap: 8px;
   padding-right: 2px;
+}
+
+.live-panel.collapsed .live-toolbar,
+.live-panel.collapsed .live-feed,
+.live-panel.collapsed .panel-head h2 {
+  display: none;
+}
+
+.live-panel.collapsed {
+  padding: 10px 8px;
+}
+
+.live-panel.collapsed .panel-head {
+  justify-content: center;
+  padding: 0;
+}
+
+.live-panel.collapsed .live-actions {
+  flex-direction: column;
+  gap: 10px;
+}
+
+.live-panel.collapsed .collapse-btn {
+  transform: rotate(180deg);
 }
 
 .feed-item {

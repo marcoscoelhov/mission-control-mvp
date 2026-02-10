@@ -63,6 +63,9 @@ const feed = [
 const agentsList = document.getElementById('agents-list');
 const kanban = document.getElementById('kanban');
 const liveFeed = document.getElementById('live-feed');
+const livePanel = document.getElementById('live-panel');
+const toggleLive = document.getElementById('toggle-live');
+const workspace = document.querySelector('.workspace');
 
 agents.forEach(([icon, name, role]) => {
   const item = document.createElement('article');
@@ -113,4 +116,12 @@ feed.forEach(([title, message]) => {
   item.className = 'feed-item';
   item.innerHTML = `<strong>${title}</strong><p>${message}</p>`;
   liveFeed.appendChild(item);
+});
+
+workspace.classList.add('live-collapsed');
+
+toggleLive.addEventListener('click', () => {
+  const isCollapsed = livePanel.classList.toggle('collapsed');
+  workspace.classList.toggle('live-collapsed', isCollapsed);
+  toggleLive.setAttribute('aria-label', isCollapsed ? 'Expandir Live' : 'Colapsar Live');
 });
