@@ -298,6 +298,14 @@ body {
   display: grid;
   gap: 8px;
   padding: 0 8px 8px;
+  min-height: 120px;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.cards.drag-over {
+  background: rgba(126, 249, 207, 0.08);
+  border: 1px dashed rgba(126, 249, 207, 0.35);
+  border-radius: 10px;
 }
 
 .card {
@@ -306,6 +314,12 @@ body {
   border-radius: 12px;
   padding: 10px;
   border-left: 2px solid rgba(126, 249, 207, 0.35);
+  cursor: grab;
+}
+
+.card.dragging {
+  opacity: 0.55;
+  transform: scale(0.995);
 }
 
 .card h3 {
@@ -450,16 +464,73 @@ body {
     overflow: auto;
   }
 
-  .workspace {
+  .topbar {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .metrics {
+    justify-content: flex-start;
+  }
+
+  .workspace,
+  .workspace.live-collapsed {
     grid-template-columns: 1fr;
     min-height: auto;
   }
 
+  .live-panel.collapsed {
+    display: none;
+  }
+
   .agents-list {
-    max-height: 320px;
+    max-height: 280px;
   }
 
   .kanban {
     min-height: 480px;
+    grid-template-columns: repeat(5, minmax(240px, 82vw));
+    scroll-snap-type: x mandatory;
+    padding-bottom: 10px;
+  }
+
+  .column {
+    scroll-snap-align: start;
+  }
+}
+
+@media (max-width: 680px) {
+  .app-shell {
+    width: 100vw;
+    margin: 0;
+    padding: 10px;
+  }
+
+  .panel,
+  .topbar {
+    border-radius: 14px;
+  }
+
+  .brand h1 {
+    font-size: 12px;
+  }
+
+  .metric strong {
+    font-size: 24px;
+  }
+
+  .tabs {
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .tab,
+  .chip {
+    white-space: nowrap;
+  }
+
+  .board-filters {
+    overflow-x: auto;
+    padding-bottom: 4px;
   }
 }
