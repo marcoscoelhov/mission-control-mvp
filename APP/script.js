@@ -16,6 +16,7 @@ const workspace = document.querySelector('.workspace');
 const agentDetails = document.getElementById('agent-details');
 const countEl = document.querySelector('.agents-panel .count');
 const autoDelegateBtn = document.getElementById('auto-delegate');
+const inboxChip = document.getElementById('inbox-chip');
 const openBroadcastBtn = document.getElementById('open-broadcast');
 const broadcastDrawer = document.getElementById('broadcast-drawer');
 const closeBroadcastBtn = document.getElementById('close-broadcast');
@@ -42,6 +43,7 @@ let selectedAgentId = null;
 let refreshTimer = null;
 let refreshMs = Number(localStorage.getItem('mc_refresh_ms') || 15000);
 let boardState = fallbackData.columns.map((c) => ({ name: c.name, items: [...(c.items || [])] }));
+let inboxMissions = [];
 
 const normalizeColumnKey = (name = '') => name.toLowerCase().trim().replace(/\s+/g, '_');
 const prettyColumn = (key = '') => key.replaceAll('_', ' ').replace(/\b\w/g, (m) => m.toUpperCase());
@@ -164,11 +166,14 @@ async function persistBroadcastMission(payload) {
   return false;
 }
 
+function refreshInboxChip() {
+  if (!inboxChip) return;
+  inboxChip.textContent = `Inbox: ${inboxMissions.length}`;
+}
+
 function addMissionToInbox(card) {
-  const inbox = boardState.find((c) => normalizeColumnKey(c.name) === 'inbox');
-  if (!inbox) return;
-  inbox.items.unshift(card);
-  renderBoard(boardState);
+  inboxMissions.unshift(card);
+  refreshInboxChip();
 }
 
 async function saveAutonomousMode(enabled) {
@@ -317,9 +322,15 @@ function updateAllCounts() {
 
 function renderBoard(columns) {
   boardState = columns.map((c) => ({ name: c.name, items: [...(c.items || [])] }));
+  const inboxColumn = boardState.find((c) => normalizeColumnKey(c.name) === 'inbox');
+  inboxMissions = [...(inboxColumn?.items || [])].map(normalizeCard);
+  refreshInboxChip();
+
   kanban.innerHTML = '';
 
-  columns.forEach((col) => {
+  const visibleColumns = columns.filter((c) => normalizeColumnKey(c.name) !== 'inbox');
+
+  visibleColumns.forEach((col) => {
     const column = document.createElement('section');
     column.className = 'column';
     column.dataset.column = normalizeColumnKey(col.name);
@@ -332,9 +343,7 @@ function renderBoard(columns) {
     if (!normalized.length) {
       const empty = document.createElement('div');
       empty.className = 'empty-column';
-      empty.textContent = normalizeColumnKey(col.name) === 'inbox'
-        ? 'Inbox pronto: use Broadcast para enviar uma missão real.'
-        : `Sem missões em ${prettyColumn(normalizeColumnKey(col.name))}.`;
+      empty.textContent = `Sem missões em ${prettyColumn(normalizeColumnKey(col.name))}.`;
       cards.appendChild(empty);
     }
 
@@ -377,21 +386,27 @@ function renderBoard(columns) {
 }
 
 function autoDelegateInbox() {
-  const inbox = document.querySelector('.column[data-column="inbox"] .cards');
-  const assigned = document.querySelector('.column[data-column="assigned"] .cards');
-  if (!inbox || !assigned) return;
+  const assignedCol = boardState.find((c) => normalizeColumnKey(c.name) === 'assigned');
+  if (!assignedCol) return;
 
-  const cards = [...inbox.querySelectorAll('.card')];
-  cards.forEach((card) => {
-    const inferred = inferOwner(`${card.dataset.title} ${card.dataset.desc}`);
-    card.dataset.owner = inferred;
-    const ownerEl = card.querySelector('.card-foot span:first-child');
-    if (ownerEl) ownerEl.textContent = inferred;
-    assigned.appendChild(card);
-  });
+  const total = inboxMissions.length;
+  if (!total) {
+    notify('Inbox está vazio.');
+    return;
+  }
 
-  updateAllCounts();
-  notify(`Auto-delegação concluída: ${cards.length} missão(ões).`);
+  const delegated = inboxMissions.map((m) => ({
+    ...m,
+    owner: inferOwner(`${m.title} ${m.desc}`),
+  }));
+
+  assignedCol.items = [...delegated, ...(assignedCol.items || [])];
+  inboxMissions = [];
+  const inboxCol = boardState.find((c) => normalizeColumnKey(c.name) === 'inbox');
+  if (inboxCol) inboxCol.items = [];
+
+  renderBoard(boardState);
+  notify(`Auto-delegação concluída: ${total} missão(ões).`);
 }
 
 function setSettingsTab(tab) {
@@ -415,6 +430,10 @@ function setupUI() {
   });
 
   autoDelegateBtn?.addEventListener('click', autoDelegateInbox);
+  inboxChip?.addEventListener('click', () => {
+    broadcastDrawer.classList.add('open');
+    settingsDrawer.classList.remove('open');
+  });
 
   openBroadcastBtn?.addEventListener('click', () => {
     broadcastDrawer.classList.add('open');
