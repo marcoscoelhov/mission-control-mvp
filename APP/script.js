@@ -48,6 +48,7 @@ const countEl = document.querySelector('.agents-panel .count');
 
 let draggedCard = null;
 let currentAgents = [];
+let selectedAgentId = null;
 
 const normalizeColumnKey = (name = '') => name.toLowerCase().trim().replace(/\s+/g, '_');
 
@@ -180,9 +181,13 @@ function renderAgents(agents) {
   agentsList.innerHTML = '';
   if (countEl) countEl.textContent = String(agents.length);
 
-  agents.forEach((agent, index) => {
+  const selected = agents.find((a) => a.id === selectedAgentId) || agents[0];
+  if (selected) selectedAgentId = selected.id;
+
+  agents.forEach((agent) => {
+    const isActive = agent.id === selectedAgentId;
     const item = document.createElement('article');
-    item.className = `agent-item ${index === 0 ? 'active' : ''}`;
+    item.className = `agent-item ${isActive ? 'active' : ''}`;
     item.innerHTML = `
       <div class="agent-icon">${escapeHtml(agent.icon)}</div>
       <div class="agent-main">
@@ -193,6 +198,7 @@ function renderAgents(agents) {
     `;
 
     item.addEventListener('click', () => {
+      selectedAgentId = agent.id;
       document.querySelectorAll('.agent-item.active').forEach((el) => el.classList.remove('active'));
       item.classList.add('active');
       renderAgentDetails(agent);
@@ -206,7 +212,7 @@ function renderAgents(agents) {
     agentsList.appendChild(item);
   });
 
-  renderAgentDetails(agents[0]);
+  if (selected) renderAgentDetails(selected);
 }
 
 function createCard([title, desc, owner, eta]) {
@@ -311,11 +317,18 @@ function setupUI() {
   });
 }
 
+async function refreshAgentsRealtime() {
+  const agents = await loadAgentsDetails();
+  renderAgents(agents);
+}
+
 async function init() {
   setupUI();
   const [dashboard, agents] = await Promise.all([loadDashboard(), loadAgentsDetails()]);
   renderBoard(dashboard.columns || fallbackData.columns);
   renderAgents(agents);
+
+  setInterval(refreshAgentsRealtime, 15000);
 }
 
 init();
