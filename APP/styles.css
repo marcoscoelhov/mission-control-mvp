@@ -165,7 +165,7 @@ body {
 }
 
 .workspace.live-collapsed {
-  grid-template-columns: 300px 1fr 72px;
+  grid-template-columns: 300px 1fr 0px;
 }
 
 .panel {
@@ -400,20 +400,23 @@ body {
 }
 
 .live-panel.collapsed {
-  padding: 10px 8px;
+  opacity: 0;
+  width: 0;
+  min-width: 0;
+  padding: 0;
+  border-width: 0;
+  pointer-events: none;
+  overflow: hidden;
 }
 
 .live-panel.collapsed .panel-head {
-  justify-content: center;
   padding: 0;
 }
 
 .live-panel.collapsed .live-actions {
-  flex-direction: column;
-  gap: 10px;
+  gap: 0;
 }
 
-/* collapse button removed */
 
 .feed-item {
   border: 1px solid rgba(255, 255, 255, 0.1);
