@@ -325,6 +325,20 @@ async function persistBoardState(action, extra = {}) {
   return apiPost(API.boardState, { action, board: boardState, ...extra });
 }
 
+async function executeMissionReal(card) {
+  try {
+    const res = await fetch('/api/missions/execute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: card.title, cardId: card.cardId }),
+    });
+    if (!res.ok) return { ok: false, evidence: ['endpoint_fail'] };
+    return await res.json();
+  } catch (_) {
+    return { ok: false, evidence: ['network_fail'] };
+  }
+}
+
 function refreshInboxChip() {
   if (!inboxChip) return;
   inboxChip.textContent = `Inbox: ${inboxMissions.length}`;
@@ -715,15 +729,29 @@ async function autonomousTick() {
     if (await moveOneMission('assigned', 'in_progress')) return;
   }
 
-  if (await moveOneMission('in_progress', 'review')) return;
+  const inProgress = getColumn('in_progress');
+  if (inProgress?.items?.length) {
+    const first = normalizeCard(inProgress.items[0]);
+    if (!first.effective) {
+      const before = snapshotBoard();
+      const exec = await executeMissionReal(first);
+      if (!exec.ok) {
+        addLiveEvent('Execução real falhou', `${first.title} não teve efetividade real (${(exec.evidence || []).join(', ')}).`, true, { missionKey: first.cardId || makeCardId(first.title), missionTitle: first.title });
+        inProgress.items[0] = { ...first, effective: false, needsEffectiveness: true, owner: 'Alfred' };
+        renderBoard(boardState);
+        const persisted = await persistBoardState('effectiveness_reopen', { title: first.title, owner: 'Alfred' });
+        if (STRICT_PERSISTENCE && !persisted) restoreBoard(before);
+        return;
+      }
 
-  const review = getColumn('review');
-  if (review?.items?.length) {
-    review.items[0] = {
-      ...normalizeCard(review.items[0]),
-      effective: true,
-      needsEffectiveness: false,
-    };
+      inProgress.items[0] = { ...first, effective: true, needsEffectiveness: false };
+      renderBoard(boardState);
+      await persistBoardState('effectiveness_ok', { title: first.title });
+      addLiveEvent('Efetividade confirmada', `${first.title} validada com evidência real.`, true, { missionKey: first.cardId || makeCardId(first.title), missionTitle: first.title });
+      return;
+    }
+
+    if (await moveOneMission('in_progress', 'review')) return;
   }
 
   await moveOneMission('review', 'done');

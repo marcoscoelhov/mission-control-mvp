@@ -24,12 +24,14 @@
           "cardId": "card_tela_infinita",
           "title": "tela infinita",
           "desc": "tela infinita para leitura",
-          "owner": "Wanda",
+          "owner": "Alfred",
           "eta": "agora",
           "impactRevenue": 3,
           "impactAutonomy": 3,
           "urgency": 3,
-          "approved": true
+          "approved": true,
+          "effective": true,
+          "needsEffectiveness": false
         },
         {
           "cardId": "card_chat",
@@ -40,38 +42,48 @@
           "impactRevenue": 3,
           "impactAutonomy": 3,
           "urgency": 3,
-          "approved": true
+          "approved": true,
+          "effective": true,
+          "needsEffectiveness": false
         },
         {
           "cardId": "card_header",
           "title": "header",
           "desc": "numeros reais no header",
-          "owner": "Wanda",
+          "owner": "Alfred",
           "eta": "agora",
           "impactRevenue": 3,
           "impactAutonomy": 3,
           "urgency": 3,
-          "approved": true
+          "approved": true,
+          "effective": true,
+          "needsEffectiveness": false
         },
         {
+          "cardId": "card_header",
           "title": "header",
           "desc": "numeros reais no header",
-          "owner": "Stark",
+          "owner": "Alfred",
           "eta": "agora",
           "impactRevenue": 3,
           "impactAutonomy": 3,
           "urgency": 3,
-          "approved": true
+          "approved": true,
+          "effective": true,
+          "needsEffectiveness": false
         },
         {
+          "cardId": "card_ui",
           "title": "ui",
           "desc": "remova sitegpt do header",
-          "owner": "Wanda",
+          "owner": "Alfred",
           "eta": "agora",
           "impactRevenue": 3,
           "impactAutonomy": 3,
           "urgency": 3,
-          "approved": true
+          "approved": true,
+          "effective": true,
+          "needsEffectiveness": false
         }
       ]
     }

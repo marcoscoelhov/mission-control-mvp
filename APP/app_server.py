@@ -78,6 +78,93 @@ def append_trail_entry(mission_id, title, line):
     TRAIL_FILE.write_text(text, encoding='utf-8')
 
 
+def infer_mission_kind(title, desc):
+    t = f"{title} {desc}".lower()
+    if 'sitegpt' in t and ('remova' in t or 'remove' in t):
+        return 'remove_sitegpt_badge'
+    if 'header' in t and ('numero' in t or 'número' in t):
+        return 'header_real_numbers'
+    if 'chat' in t and 'agente' in t:
+        return 'agent_chat_toggle'
+    if 'tela infinita' in t or ('infinita' in t and 'leitura' in t):
+        return 'infinite_reading'
+    return 'manual_required'
+
+
+def apply_mission_effect(mission):
+    title = mission.get('title', '')
+    desc = mission.get('desc', '')
+    kind = mission.get('kind') or infer_mission_kind(title, desc)
+
+    index_path = BASE / 'index.html'
+    styles_path = BASE / 'styles.css'
+
+    evidence = []
+    changed = False
+
+    if kind == 'remove_sitegpt_badge':
+        html = index_path.read_text(encoding='utf-8')
+        if '<span class="badge">SiteGPT</span>' in html:
+            html = html.replace('<span class="badge">SiteGPT</span>', '')
+            index_path.write_text(html, encoding='utf-8')
+            changed = True
+            evidence.append('badge SiteGPT removida do header')
+        else:
+            evidence.append('badge SiteGPT já estava removida')
+
+    elif kind == 'header_real_numbers':
+        html = index_path.read_text(encoding='utf-8')
+        ok_agents = 'id="agents-active-value"' in html
+        ok_tasks = 'id="tasks-queue-value"' in html
+        if ok_agents and ok_tasks:
+            evidence.append('header já usa contadores dinâmicos reais')
+        else:
+            evidence.append('header ainda sem ids dinâmicos esperados')
+            return False, kind, evidence
+
+    elif kind == 'agent_chat_toggle':
+        html = index_path.read_text(encoding='utf-8')
+        if '>Chat<' in html:
+            evidence.append('aba Chat já existe e está visível')
+        else:
+            evidence.append('aba Chat não encontrada no header')
+            return False, kind, evidence
+
+    elif kind == 'infinite_reading':
+        css = styles_path.read_text(encoding='utf-8')
+        target = '.doc-block pre {\n  margin: 0;\n  white-space: pre-wrap;\n  font-size: 11px;\n  color: #c9d4ea;\n  max-height: 180px;\n  overflow: auto;\n}'
+        if target in css:
+            css = css.replace(target, '.doc-block pre {\n  margin: 0;\n  white-space: pre-wrap;\n  font-size: 11px;\n  color: #c9d4ea;\n  max-height: none;\n  overflow: visible;\n}')
+            styles_path.write_text(css, encoding='utf-8')
+            changed = True
+            evidence.append('modo leitura infinita aplicado em .doc-block pre')
+        elif 'max-height: none;' in css:
+            evidence.append('modo leitura infinita já estava ativo')
+        else:
+            evidence.append('bloco alvo de leitura infinita não encontrado')
+            return False, kind, evidence
+
+    else:
+        evidence.append('missão exige execução manual/específica (kind não automatizado)')
+        return False, kind, evidence
+
+    return True, kind, evidence
+
+
+def find_mission_ref(data, title=None, card_id=None):
+    cols = data.get('columns', [])
+    for c in cols:
+        items = c.get('items', []) or []
+        for i, m in enumerate(items):
+            mt = str(m.get('title', '')).strip().lower()
+            mc = str(m.get('cardId', '')).strip().lower()
+            if card_id and mc and mc == str(card_id).strip().lower():
+                return c, i, m
+            if title and mt and mt == str(title).strip().lower():
+                return c, i, m
+    return None, None, None
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(BASE), **kwargs)
@@ -96,6 +183,14 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(200, {'ok': True, 'autonomous': bool(data.get('autonomous'))})
         if self.path == '/api/dashboard':
             return self._json(200, load_data())
+        if self.path == '/api/openclaw/agents/details':
+            details = BASE / 'openclaw-agents-details.json'
+            if details.exists():
+                try:
+                    return self._json(200, json.loads(details.read_text(encoding='utf-8')))
+                except Exception:
+                    return self._json(500, {'ok': False, 'error': 'invalid_agents_details'})
+            return self._json(404, {'ok': False, 'error': 'agents_details_not_found'})
         return super().do_GET()
 
     def _read_json(self):
@@ -144,6 +239,29 @@ class Handler(SimpleHTTPRequestHandler):
             save_data(data)
             return self._json(200, {'ok': True, 'missionId': mission['id'], 'dispatched': dispatched})
 
+        if self.path == '/api/missions/execute':
+            payload = self._read_json()
+            data = load_data()
+            title = payload.get('title')
+            card_id = payload.get('cardId')
+            col, idx, mission = find_mission_ref(data, title=title, card_id=card_id)
+            if mission is None:
+                return self._json(404, {'ok': False, 'error': 'mission_not_found'})
+
+            ok, kind, evidence = apply_mission_effect(mission)
+            mission['kind'] = kind
+            mission['effective'] = bool(ok)
+            mission['executed'] = bool(ok)
+            mission['effectEvidence'] = evidence
+            if col is not None and idx is not None:
+                col['items'][idx] = mission
+
+            mission_id = mission.get('id') or mission.get('cardId') or mission.get('title', 'unknown')
+            append_trail_entry(mission_id, mission.get('title', 'Missão sem título'), f"Execução ({kind}): {'OK' if ok else 'FALHOU'} | {'; '.join(evidence)}")
+
+            save_data(data)
+            return self._json(200, {'ok': ok, 'kind': kind, 'evidence': evidence})
+
         if self.path == '/api/dashboard/state':
             payload = self._read_json()
             board = payload.get('board')
@@ -190,6 +308,8 @@ class Handler(SimpleHTTPRequestHandler):
                     append_trail_entry(mission_id, title, 'Confirmada no estado do board (Inbox).')
                 elif action == 'effectiveness_reopen':
                     append_trail_entry(mission_id, title, 'Alfred reabriu a missão para garantir efetividade real antes do Done final.')
+                elif action == 'effectiveness_ok':
+                    append_trail_entry(mission_id, title, 'Efetividade real validada; liberada para seguir no fluxo.')
 
                 save_data(data)
                 return self._json(200, {'ok': True, 'trailFile': '/MISSOES_TRAJETO.md'})

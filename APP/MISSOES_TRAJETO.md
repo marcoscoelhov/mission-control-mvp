@@ -47,3 +47,32 @@ Este arquivo guarda o histórico completo de cada missão (um card por missão).
   - [2026-02-10 18:27:21 UTC] Despacho real para OpenClaw enviado.
   - [2026-02-10 18:27:26 UTC] Fluxo autônomo: in_progress → review (owner: Wanda).
   - [2026-02-10 18:27:31 UTC] Fluxo autônomo: review → done (owner: Wanda).
+  - [2026-02-10 18:32:11 UTC] Alfred reabriu a missão para garantir efetividade real antes do Done final.
+  - [2026-02-10 18:32:16 UTC] Alfred reabriu a missão para garantir efetividade real antes do Done final.
+  - [2026-02-10 18:32:21 UTC] Alfred reabriu a missão para garantir efetividade real antes do Done final.
+  - [2026-02-10 18:32:26 UTC] Alfred reabriu a missão para garantir efetividade real antes do Done final.
+
+## CARD ui — ui
+- Status: criado
+- Trajeto:
+  - [2026-02-10 18:32:31 UTC] Alfred reabriu a missão para garantir efetividade real antes do Done final.
+  - [2026-02-10 18:32:36 UTC] Fluxo autônomo: assigned → in_progress (owner: Alfred).
+  - [2026-02-10 18:32:36 UTC] Despacho real para OpenClaw enviado.
+  - [2026-02-10 18:32:41 UTC] Fluxo autônomo: assigned → in_progress (owner: Alfred).
+  - [2026-02-10 18:32:41 UTC] Despacho real para OpenClaw enviado.
+  - [2026-02-10 18:32:46 UTC] Fluxo autônomo: assigned → in_progress (owner: Alfred).
+  - [2026-02-10 18:32:46 UTC] Despacho real para OpenClaw enviado.
+  - [2026-02-10 18:32:51 UTC] Fluxo autônomo: assigned → in_progress (owner: Alfred).
+  - [2026-02-10 18:32:51 UTC] Despacho real para OpenClaw enviado.
+  - [2026-02-10 18:32:56 UTC] Fluxo autônomo: assigned → in_progress (owner: Alfred).
+  - [2026-02-10 18:32:56 UTC] Despacho real para OpenClaw enviado.
+  - [2026-02-10 18:33:01 UTC] Fluxo autônomo: in_progress → review (owner: Alfred).
+  - [2026-02-10 18:33:06 UTC] Fluxo autônomo: in_progress → review (owner: Alfred).
+  - [2026-02-10 18:33:11 UTC] Fluxo autônomo: in_progress → review (owner: Alfred).
+  - [2026-02-10 18:33:16 UTC] Fluxo autônomo: in_progress → review (owner: Alfred).
+  - [2026-02-10 18:33:21 UTC] Fluxo autônomo: in_progress → review (owner: Alfred).
+  - [2026-02-10 18:33:26 UTC] Fluxo autônomo: review → done (owner: Alfred).
+  - [2026-02-10 18:33:31 UTC] Fluxo autônomo: review → done (owner: Alfred).
+  - [2026-02-10 18:33:36 UTC] Fluxo autônomo: review → done (owner: Alfred).
+  - [2026-02-10 18:33:41 UTC] Fluxo autônomo: review → done (owner: Alfred).
+  - [2026-02-10 18:33:46 UTC] Fluxo autônomo: review → done (owner: Alfred).
