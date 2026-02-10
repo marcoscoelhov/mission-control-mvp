@@ -433,6 +433,23 @@ body {
   color: #aaffea;
 }
 
+.card-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.chip.mini.danger {
+  color: #ffd0d8;
+  border-color: rgba(255, 89, 127, 0.45);
+  background: rgba(255, 89, 127, 0.12);
+}
+
+.chip.mini.danger:hover {
+  background: rgba(255, 89, 127, 0.2);
+}
+
 .live-panel {
   display: grid;
   grid-template-rows: auto auto 1fr;

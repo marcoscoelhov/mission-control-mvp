@@ -237,6 +237,7 @@ function normalizeCard(item) {
     expectedChange: item.expectedChange || '',
     acceptanceTest: item.acceptanceTest || '',
     clarificationAsked: Boolean(item.clarificationAsked),
+    clarificationAnswer: item.clarificationAnswer || '',
   };
 }
 
@@ -530,10 +531,11 @@ function serializeCard(card) {
     expectedChange: card.dataset.expectedChange || '',
     acceptanceTest: card.dataset.acceptanceTest || '',
     clarificationAsked: card.dataset.clarificationAsked === '1',
+    clarificationAnswer: card.dataset.clarificationAnswer || '',
   };
 }
 
-function createCard(item) {
+function createCard(item, columnKey = '') {
   const c = normalizeCard(item);
   const card = document.createElement('article');
   card.className = 'card';
@@ -556,6 +558,7 @@ function createCard(item) {
   card.dataset.expectedChange = c.expectedChange || '';
   card.dataset.acceptanceTest = c.acceptanceTest || '';
   card.dataset.clarificationAsked = c.clarificationAsked ? '1' : '0';
+  card.dataset.clarificationAnswer = c.clarificationAnswer || '';
 
   const score = priorityScore(c);
   const approveBtn = c.approved
@@ -566,6 +569,9 @@ function createCard(item) {
     : (c.needsEffectiveness ? `<span class="chip mini">Revisão de efetividade</span>` : `<span class="chip mini">Efetividade pendente</span>`);
   const executionBadge = c.executionStatus ? `<span class="chip mini">${escapeHtml(c.executionStatus)}</span>` : '';
   const oracleBadge = c.clarificationAsked ? `<span class="chip mini">Oráculo perguntou no WhatsApp</span>` : '';
+  const shouldClarify = columnKey === 'needs_clarification' || (c.executionStatus || '').toLowerCase() === 'needs_clarification';
+  const clarifyBtn = shouldClarify ? `<button class="chip mini" data-action="clarify">Responder</button>` : '';
+  const deleteBtn = `<button class="chip mini danger" data-action="delete">Excluir</button>`;
 
   card.innerHTML = `
     <h3>${escapeHtml(c.title)}</h3>
@@ -582,6 +588,7 @@ function createCard(item) {
     </div>
     <div class="approve-row">${approveBtn} ${effectiveness} ${executionBadge} ${oracleBadge}</div>
     ${c.needsUserAction ? `<div class="empty-column" style="margin-top:8px">Ação necessária: ${escapeHtml(c.needsUserAction)}</div>` : ''}
+    <div class="card-actions">${clarifyBtn} ${deleteBtn}</div>
   `;
 
   card.querySelector('[data-action="approve"]')?.addEventListener('click', async (e) => {
@@ -599,6 +606,108 @@ function createCard(item) {
     addLiveEvent('Jarvis aprovou missão', card.dataset.title || 'Missão sem título', true, { missionKey: card.dataset.cardId || card.dataset.title, missionTitle: card.dataset.title });
   });
 
+  card.querySelector('[data-action="clarify"]')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const answer = prompt(
+      'Resposta de clarificação (pode colar em formato OBJETIVO / ARQUIVO-ALVO / SUCESSO):',
+      card.dataset.clarificationAnswer || ''
+    );
+    if (answer == null) return;
+    const text = answer.trim();
+    if (!text) {
+      showToast('Resposta vazia. Nada foi alterado.');
+      return;
+    }
+
+    const before = snapshotBoard();
+    const currentCol = card.closest('.column')?.dataset.column || 'needs_clarification';
+    const assignedCol = ensureColumn('assigned', 'Assigned');
+
+    let moved = null;
+    for (const col of boardState) {
+      const idx = (col.items || []).findIndex((x) => normalizeCard(x).cardId === card.dataset.cardId);
+      if (idx >= 0) {
+        const original = normalizeCard(col.items.splice(idx, 1)[0]);
+        moved = {
+          ...original,
+          desc: `${original.desc}\n\n[Clarificação do Monarca]\n${text}`,
+          clarificationAnswer: text,
+          needsUserAction: '',
+          executionStatus: 'clarified',
+          clarificationAsked: false,
+        };
+        break;
+      }
+    }
+
+    if (!moved) {
+      showToast('Não consegui localizar o card no board.');
+      restoreBoard(before);
+      return;
+    }
+
+    assignedCol.items = [moved, ...(assignedCol.items || [])];
+    renderBoard(boardState);
+
+    const ok = await persistBoardState('clarification_reply', {
+      cardId: card.dataset.cardId,
+      title: card.dataset.title,
+      fromColumn: currentCol,
+      toColumn: 'assigned',
+      clarification: text,
+    });
+
+    if (STRICT_PERSISTENCE && !ok) {
+      showToast('Falha ao salvar resposta de clarificação no backend');
+      restoreBoard(before);
+      return;
+    }
+
+    addLiveEvent('Monarca respondeu clarificação', `${card.dataset.title}: voltou para Assigned.`, true, {
+      missionKey: card.dataset.cardId || card.dataset.title,
+      missionTitle: card.dataset.title,
+    });
+  });
+
+  card.querySelector('[data-action="delete"]')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const okConfirm = confirm(`Excluir card "${card.dataset.title || 'Sem título'}"?`);
+    if (!okConfirm) return;
+
+    const before = snapshotBoard();
+    let fromColumn = 'unknown';
+    let removed = false;
+
+    for (const col of boardState) {
+      const idx = (col.items || []).findIndex((x) => normalizeCard(x).cardId === card.dataset.cardId);
+      if (idx >= 0) {
+        col.items.splice(idx, 1);
+        fromColumn = normalizeColumnKey(col.name || 'unknown');
+        removed = true;
+        break;
+      }
+    }
+
+    if (!removed) {
+      showToast('Não consegui excluir: card não encontrado.');
+      restoreBoard(before);
+      return;
+    }
+
+    renderBoard(boardState);
+    const ok = await persistBoardState('delete_card', { cardId: card.dataset.cardId, title: card.dataset.title, fromColumn });
+    if (STRICT_PERSISTENCE && !ok) {
+      showToast('Falha ao excluir card no backend');
+      restoreBoard(before);
+      return;
+    }
+
+    addLiveEvent('Card excluído', `${card.dataset.title} removido de ${prettyColumn(fromColumn)}.`, true, {
+      missionKey: card.dataset.cardId || card.dataset.title,
+      missionTitle: card.dataset.title,
+    });
+  });
+
   card.addEventListener('dblclick', () => {
     const r = Number(prompt('Impacto Receita (0-5):', card.dataset.impactRevenue || '3'));
     const a = Number(prompt('Impacto Autonomia (0-5):', card.dataset.impactAutonomy || '3'));
@@ -608,7 +717,8 @@ function createCard(item) {
     card.dataset.impactAutonomy = String(Math.max(0, Math.min(5, a)));
     card.dataset.urgency = String(Math.max(0, Math.min(5, u)));
     const data = serializeCard(card);
-    const replacement = createCard(data);
+    const currentCol = card.closest('.column')?.dataset.column || '';
+    const replacement = createCard(data, currentCol);
     card.replaceWith(replacement);
   });
 
@@ -648,8 +758,9 @@ function renderBoard(columns) {
     const cards = document.createElement('div');
     cards.className = 'cards';
 
+    const columnKey = normalizeColumnKey(col.name);
     const normalized = (col.items || []).map(normalizeCard).sort((a, b) => priorityScore(b) - priorityScore(a));
-    normalized.forEach((item) => cards.appendChild(createCard(item)));
+    normalized.forEach((item) => cards.appendChild(createCard(item, columnKey)));
     if (!normalized.length) {
       const empty = document.createElement('div');
       empty.className = 'empty-column';

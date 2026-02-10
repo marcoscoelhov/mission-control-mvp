@@ -577,6 +577,25 @@ class Handler(SimpleHTTPRequestHandler):
                     append_trail_entry(mission_id, title, 'Alfred reabriu a missão para garantir efetividade real antes do Done final.')
                 elif action == 'effectiveness_ok':
                     append_trail_entry(mission_id, title, 'Efetividade real validada; liberada para seguir no fluxo.')
+                elif action == 'clarification_reply':
+                    append_trail_entry(
+                        mission_id,
+                        title,
+                        f"Monarca respondeu clarificação; missão movida de {payload.get('fromColumn', '?')} para {payload.get('toColumn', '?')}."
+                    )
+                    clar = str(payload.get('clarification', '')).strip()
+                    if clar:
+                        append_trail_entry(mission_id, title, f"Contexto recebido: {clar[:600]}")
+                elif action == 'delete_card':
+                    append_trail_entry(
+                        mission_id,
+                        title,
+                        f"Card removido manualmente da coluna {payload.get('fromColumn', '?')}."
+                    )
+                    idx_map = data.get('missionIndex', {})
+                    cid = str(payload.get('cardId') or '')
+                    if cid and isinstance(idx_map, dict):
+                        idx_map.pop(cid, None)
 
                 save_data(data)
                 return self._json(200, {'ok': True, 'trailFile': '/MISSOES_TRAJETO.md'})
