@@ -25,7 +25,7 @@ body {
 }
 
 body {
-  overflow: hidden;
+  overflow: auto;
 }
 
 .bg-orb {
@@ -160,7 +160,7 @@ body {
   display: grid;
   gap: 12px;
   grid-template-columns: 300px 1fr 320px;
-  min-height: calc(100vh - 116px);
+  min-height: max-content;
   transition: grid-template-columns 0.28s ease;
 }
 
@@ -171,7 +171,7 @@ body {
 .panel {
   border-radius: 18px;
   padding: 14px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .panel-head {
@@ -200,8 +200,8 @@ body {
 .agents-list {
   display: grid;
   gap: 9px;
-  max-height: calc(100vh - 190px);
-  overflow: auto;
+  max-height: none;
+  overflow: visible;
   padding-right: 3px;
 }
 
@@ -663,8 +663,8 @@ body {
   white-space: pre-wrap;
   font-size: 11px;
   color: #c9d4ea;
-  max-height: 180px;
-  overflow: auto;
+  max-height: none;
+  overflow: visible;
 }
 
 .live-panel.collapsed .agent-details,

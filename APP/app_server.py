@@ -86,9 +86,11 @@ def infer_mission_kind(title, desc):
         return 'header_real_numbers'
     if 'chat' in t and 'agente' in t:
         return 'agent_chat_toggle'
-    if ('tela infinita' in t or 'scroll infinito' in t) and ('dashboard' in t or 'painel' in t):
+    if 'tela infinita' in t or 'scroll infinito' in t:
+        if 'doc' in t or 'bloco' in t:
+            return 'infinite_reading'
         return 'dashboard_infinite_scroll'
-    if 'tela infinita' in t or ('infinita' in t and 'leitura' in t):
+    if 'infinita' in t and 'leitura' in t:
         return 'infinite_reading'
     return 'manual_required'
 
