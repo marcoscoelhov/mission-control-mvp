@@ -346,11 +346,46 @@ body {
   line-height: 1.4;
 }
 
+.score-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 0 0 8px;
+}
+
+.score-pill {
+  font-size: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  padding: 3px 7px;
+  color: #d3ddf3;
+}
+
+.score-pill.total {
+  border-color: rgba(126, 249, 207, 0.45);
+  color: #aaffea;
+}
+
 .card-foot {
   display: flex;
   justify-content: space-between;
   font-size: 10px;
   color: #b8c2d7;
+}
+
+.approve-row {
+  margin-top: 8px;
+}
+
+.chip.mini {
+  padding: 4px 8px;
+  font-size: 10px;
+}
+
+.chip.mini.approved {
+  background: rgba(126, 249, 207, 0.16);
+  border-color: rgba(126, 249, 207, 0.45);
+  color: #aaffea;
 }
 
 .live-panel {

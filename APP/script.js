@@ -1,16 +1,10 @@
 const fallbackData = {
-  agents: [
-    ['🛠️', 'Friday', 'Developer Agent'],
-    ['📈', 'Fury', 'Customer Research'],
-    ['🌱', 'Groot', 'Retention Specialist'],
-    ['🏹', 'Hawkeye', 'Outbound Scout'],
-  ],
   columns: [
-    { name: 'Inbox', items: [['E-commerce Vertical Implementation Guide', 'Comprehensive docs for 11 core verticals.', 'Friday', '4m']] },
-    { name: 'Assigned', items: [['Execute Real Estate Distribution', 'Run distribution protocol for geo-specific blogs.', 'Groot', '40m']] },
-    { name: 'In Progress', items: [['Listicle Outreach Campaign - 5 Targets', 'Execute outreach to high-priority AI chatbot sites.', 'Hawkeye', '2d']] },
-    { name: 'Review', items: [['SiteGPT Hero Video Production', 'Produce 30-45 second hero clip.', 'Wanda', '3d']] },
-    { name: 'Done', items: [['Shopify Blog Landing Page', 'Landing page copy and metadata finalized.', 'Loki', '2d']] },
+    { name: 'Inbox', items: [['API de cobrança recorrente', 'Criar serviço de assinatura com webhook.', 'Stark', '4m']] },
+    { name: 'Assigned', items: [['Landing de oferta premium', 'Página de conversão com prova social.', 'Wanda', '40m']] },
+    { name: 'In Progress', items: [['Pipeline de deploy', 'Padronizar build/deploy com rollback.', 'Thanos', '2d']] },
+    { name: 'Review', items: [['Auditoria de fluxo comercial', 'Checar gargalos no handoff vendas→sucesso.', 'Alfred', '3d']] },
+    { name: 'Done', items: [['Dashboard baseline', 'Estrutura visual inicial publicada.', 'Stark', '2d']] },
   ],
 };
 
@@ -21,6 +15,7 @@ const toggleLive = document.getElementById('toggle-live');
 const workspace = document.querySelector('.workspace');
 const agentDetails = document.getElementById('agent-details');
 const countEl = document.querySelector('.agents-panel .count');
+const autoDelegateBtn = document.getElementById('auto-delegate');
 
 const settingsDrawer = document.getElementById('settings-drawer');
 const openSettingsBtn = document.getElementById('open-settings');
@@ -38,27 +33,64 @@ let refreshTimer = null;
 let refreshMs = Number(localStorage.getItem('mc_refresh_ms') || 15000);
 
 const normalizeColumnKey = (name = '') => name.toLowerCase().trim().replace(/\s+/g, '_');
+const prettyColumn = (key = '') => key.replaceAll('_', ' ').replace(/\b\w/g, (m) => m.toUpperCase());
 const makeCardId = (title = '') => `card_${title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')}`;
 const escapeHtml = (s = '') => String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 
-const normalizeAgent = (agent) => {
-  if (Array.isArray(agent)) {
-    const [icon, name, role] = agent;
-    return { id: (name || '').toLowerCase(), icon, name, role, status: 'working', model: 'n/a', soul: '', memory: '' };
+function notify(msg) {
+  console.log(msg);
+}
+
+function priorityScore(card) {
+  return Number(card.impactRevenue || 0) + Number(card.impactAutonomy || 0) + Number(card.urgency || 0);
+}
+
+function inferOwner(text) {
+  const t = text.toLowerCase();
+  if (/(api|backend|deploy|infra|server|banco|db|código|code|integra)/.test(t)) return 'Thanos';
+  if (/(ui|ux|frontend|front|layout|página|design|landing|tela)/.test(t)) return 'Wanda';
+  if (/(auditoria|auditar|gargalo|dependên|distribui|fluxo|handoff)/.test(t)) return 'Alfred';
+  return 'Stark';
+}
+
+function normalizeCard(item) {
+  if (Array.isArray(item)) {
+    const [title, desc, owner, eta] = item;
+    return {
+      title,
+      desc,
+      owner,
+      eta,
+      impactRevenue: 3,
+      impactAutonomy: 3,
+      urgency: 3,
+      approved: owner === 'Thanos' || owner === 'Wanda' || owner === 'Alfred',
+    };
   }
   return {
-    id: agent?.id || (agent?.name || 'agent').toLowerCase(),
-    icon: agent?.icon || '🤖',
-    name: agent?.name || 'Agent',
-    role: agent?.role || 'OpenClaw Agent',
-    rank: agent?.rank || '—',
-    mission: agent?.mission || '',
-    status: agent?.status || 'online',
-    model: agent?.model || 'unknown',
-    soul: agent?.soul || '',
-    memory: agent?.memory || '',
+    title: item.title || 'Sem título',
+    desc: item.desc || '',
+    owner: item.owner || 'Stark',
+    eta: item.eta || '0m',
+    impactRevenue: Number(item.impactRevenue ?? 3),
+    impactAutonomy: Number(item.impactAutonomy ?? 3),
+    urgency: Number(item.urgency ?? 3),
+    approved: Boolean(item.approved),
   };
-};
+}
+
+const normalizeAgent = (agent) => ({
+  id: agent?.id || (agent?.name || 'agent').toLowerCase(),
+  icon: agent?.icon || '🤖',
+  name: agent?.name || 'Agent',
+  role: agent?.role || 'OpenClaw Agent',
+  rank: agent?.rank || '—',
+  mission: agent?.mission || '',
+  status: agent?.status || 'online',
+  model: agent?.model || 'unknown',
+  soul: agent?.soul || '',
+  memory: agent?.memory || '',
+});
 
 async function fetchJson(url) {
   const res = await fetch(url, { cache: 'no-store' });
@@ -84,14 +116,13 @@ async function loadAgentsDetails() {
       if (Array.isArray(d?.agents)) return d.agents.map(normalizeAgent);
     } catch (_) {}
   }
-  return fallbackData.agents.map(normalizeAgent);
+  return [];
 }
 
 async function loadMission() {
   for (const url of ['/api/mission.md', './MISSAO.md']) {
     try {
-      const text = await fetchText(url);
-      missionContent.textContent = text;
+      missionContent.textContent = await fetchText(url);
       return;
     } catch (_) {}
   }
@@ -111,11 +142,7 @@ async function persistMove(payload) {
 async function saveAutonomousMode(enabled) {
   localStorage.setItem('mc_autonomous', enabled ? '1' : '0');
   autonomousStatus.textContent = enabled ? 'Modo autônomo ativado.' : 'Modo autônomo desativado.';
-
-  for (const req of [
-    { url: '/api/autonomous/mode', body: { enabled } },
-    { url: '/api/reinado/ajustes', body: { auto_exec_enabled: enabled } },
-  ]) {
+  for (const req of [{ url: '/api/autonomous/mode', body: { enabled } }, { url: '/api/reinado/ajustes', body: { auto_exec_enabled: enabled } }]) {
     try {
       const res = await fetch(req.url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req.body) });
       if (res.ok) return;
@@ -124,10 +151,8 @@ async function saveAutonomousMode(enabled) {
 }
 
 function renderAgentDetails(agent) {
-  if (!agent) return;
   const soul = agent.soul || 'SOUL.md não encontrado para este agente.';
   const memory = agent.memory || 'MEMORY.md não encontrado para este agente.';
-
   agentDetails.innerHTML = `
     <div class="detail-head">
       <div class="agent-icon lg">${escapeHtml(agent.icon)}</div>
@@ -148,14 +173,12 @@ function renderAgentDetails(agent) {
 function renderAgents(agents) {
   agentsList.innerHTML = '';
   if (countEl) countEl.textContent = String(agents.length);
-
   const selected = agents.find((a) => a.id === selectedAgentId) || agents[0];
   if (selected) selectedAgentId = selected.id;
 
   agents.forEach((agent) => {
-    const isActive = agent.id === selectedAgentId;
     const item = document.createElement('article');
-    item.className = `agent-item ${isActive ? 'active' : ''}`;
+    item.className = `agent-item ${agent.id === selectedAgentId ? 'active' : ''}`;
     item.innerHTML = `<div class="agent-icon">${escapeHtml(agent.icon)}</div><div class="agent-main"><strong>${escapeHtml(agent.name)}</strong><span>${escapeHtml(agent.role)}</span></div><div class="status">${escapeHtml(agent.status)}</div>`;
     item.addEventListener('click', () => {
       selectedAgentId = agent.id;
@@ -173,13 +196,74 @@ function renderAgents(agents) {
   if (selected) renderAgentDetails(selected);
 }
 
-function createCard([title, desc, owner, eta]) {
+function serializeCard(card) {
+  return {
+    title: card.dataset.title,
+    desc: card.dataset.desc,
+    owner: card.dataset.owner,
+    eta: card.dataset.eta,
+    impactRevenue: Number(card.dataset.impactRevenue || 0),
+    impactAutonomy: Number(card.dataset.impactAutonomy || 0),
+    urgency: Number(card.dataset.urgency || 0),
+    approved: card.dataset.approved === '1',
+  };
+}
+
+function createCard(item) {
+  const c = normalizeCard(item);
   const card = document.createElement('article');
   card.className = 'card';
   card.draggable = true;
-  card.dataset.cardId = makeCardId(title);
-  card.dataset.title = title;
-  card.innerHTML = `<h3>${escapeHtml(title)}</h3><p>${escapeHtml(desc)}</p><div class="card-foot"><span>${escapeHtml(owner)}</span><span>${escapeHtml(eta)} ago</span></div>`;
+  card.dataset.cardId = makeCardId(c.title);
+  card.dataset.title = c.title;
+  card.dataset.desc = c.desc;
+  card.dataset.owner = c.owner;
+  card.dataset.eta = c.eta;
+  card.dataset.impactRevenue = String(c.impactRevenue);
+  card.dataset.impactAutonomy = String(c.impactAutonomy);
+  card.dataset.urgency = String(c.urgency);
+  card.dataset.approved = c.approved ? '1' : '0';
+
+  const score = priorityScore(c);
+  const approveBtn = c.approved
+    ? `<span class="chip mini approved">Aprovado</span>`
+    : `<button class="chip mini" data-action="approve">Aprovar (Jarvis)</button>`;
+
+  card.innerHTML = `
+    <h3>${escapeHtml(c.title)}</h3>
+    <p>${escapeHtml(c.desc)}</p>
+    <div class="score-row">
+      <span class="score-pill">💰 ${c.impactRevenue}</span>
+      <span class="score-pill">🤖 ${c.impactAutonomy}</span>
+      <span class="score-pill">⚡ ${c.urgency}</span>
+      <span class="score-pill total">Σ ${score}</span>
+    </div>
+    <div class="card-foot">
+      <span>${escapeHtml(c.owner)}</span>
+      <span>${escapeHtml(c.eta)} ago</span>
+    </div>
+    <div class="approve-row">${approveBtn}</div>
+  `;
+
+  card.querySelector('[data-action="approve"]')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    card.dataset.approved = '1';
+    const row = card.querySelector('.approve-row');
+    if (row) row.innerHTML = `<span class="chip mini approved">Aprovado</span>`;
+  });
+
+  card.addEventListener('dblclick', () => {
+    const r = Number(prompt('Impacto Receita (0-5):', card.dataset.impactRevenue || '3'));
+    const a = Number(prompt('Impacto Autonomia (0-5):', card.dataset.impactAutonomy || '3'));
+    const u = Number(prompt('Urgência (0-5):', card.dataset.urgency || '3'));
+    if ([r, a, u].some((x) => Number.isNaN(x))) return;
+    card.dataset.impactRevenue = String(Math.max(0, Math.min(5, r)));
+    card.dataset.impactAutonomy = String(Math.max(0, Math.min(5, a)));
+    card.dataset.urgency = String(Math.max(0, Math.min(5, u)));
+    const data = serializeCard(card);
+    const replacement = createCard(data);
+    card.replaceWith(replacement);
+  });
 
   card.addEventListener('dragstart', () => { draggedCard = card; card.classList.add('dragging'); });
   card.addEventListener('dragend', () => {
@@ -201,6 +285,7 @@ function updateAllCounts() {
 
 function renderBoard(columns) {
   kanban.innerHTML = '';
+
   columns.forEach((col) => {
     const column = document.createElement('section');
     column.className = 'column';
@@ -208,8 +293,13 @@ function renderBoard(columns) {
 
     const cards = document.createElement('div');
     cards.className = 'cards';
+
+    const normalized = (col.items || []).map(normalizeCard).sort((a, b) => priorityScore(b) - priorityScore(a));
+    normalized.forEach((item) => cards.appendChild(createCard(item)));
+
     cards.addEventListener('dragover', (e) => { e.preventDefault(); cards.classList.add('drag-over'); });
     cards.addEventListener('dragleave', () => cards.classList.remove('drag-over'));
+
     cards.addEventListener('drop', async (e) => {
       e.preventDefault();
       cards.classList.remove('drag-over');
@@ -217,19 +307,50 @@ function renderBoard(columns) {
 
       const fromColumn = draggedCard.closest('.column')?.dataset.column || null;
       const toColumn = column.dataset.column;
+
+      if (toColumn === 'in_progress' && draggedCard.dataset.approved !== '1') {
+        notify('Gate Jarvis: esta missão precisa estar aprovada antes de ir para In Progress.');
+        return;
+      }
+
       const siblings = [...cards.querySelectorAll('.card:not(.dragging)')];
       const next = siblings.find((s) => e.clientY <= s.getBoundingClientRect().top + s.offsetHeight / 2);
       if (next) cards.insertBefore(draggedCard, next); else cards.appendChild(draggedCard);
+
+      if (toColumn === 'assigned' && draggedCard.dataset.owner === 'Stark') {
+        const inferred = inferOwner(`${draggedCard.dataset.title} ${draggedCard.dataset.desc}`);
+        draggedCard.dataset.owner = inferred;
+        const ownerEl = draggedCard.querySelector('.card-foot span:first-child');
+        if (ownerEl) ownerEl.textContent = inferred;
+      }
+
       const toIndex = [...cards.querySelectorAll('.card')].indexOf(draggedCard);
       updateAllCounts();
       await persistMove({ cardId: draggedCard.dataset.cardId, title: draggedCard.dataset.title, fromColumn, toColumn, toIndex });
     });
 
-    (col.items || []).forEach((item) => cards.appendChild(createCard(item)));
-    column.innerHTML = `<header class="column-head"><span>${escapeHtml(col.name)}</span><span>${(col.items || []).length}</span></header>`;
+    column.innerHTML = `<header class="column-head"><span>${escapeHtml(col.name)}</span><span>${normalized.length}</span></header>`;
     column.appendChild(cards);
     kanban.appendChild(column);
   });
+}
+
+function autoDelegateInbox() {
+  const inbox = document.querySelector('.column[data-column="inbox"] .cards');
+  const assigned = document.querySelector('.column[data-column="assigned"] .cards');
+  if (!inbox || !assigned) return;
+
+  const cards = [...inbox.querySelectorAll('.card')];
+  cards.forEach((card) => {
+    const inferred = inferOwner(`${card.dataset.title} ${card.dataset.desc}`);
+    card.dataset.owner = inferred;
+    const ownerEl = card.querySelector('.card-foot span:first-child');
+    if (ownerEl) ownerEl.textContent = inferred;
+    assigned.appendChild(card);
+  });
+
+  updateAllCounts();
+  notify(`Auto-delegação concluída: ${cards.length} missão(ões).`);
 }
 
 function setSettingsTab(tab) {
@@ -241,21 +362,21 @@ function startRealtimeRefresh() {
   if (refreshTimer) clearInterval(refreshTimer);
   refreshTimer = setInterval(async () => {
     const agents = await loadAgentsDetails();
-    renderAgents(agents);
+    if (agents.length) renderAgents(agents);
   }, refreshMs);
 }
 
 function setupUI() {
   workspace.classList.add('live-collapsed');
-
   toggleLive.addEventListener('click', () => {
     const isCollapsed = livePanel.classList.toggle('collapsed');
     workspace.classList.toggle('live-collapsed', isCollapsed);
   });
 
+  autoDelegateBtn?.addEventListener('click', autoDelegateInbox);
+
   openSettingsBtn.addEventListener('click', () => settingsDrawer.classList.add('open'));
   closeSettingsBtn.addEventListener('click', () => settingsDrawer.classList.remove('open'));
-
   settingsTabButtons.forEach((btn) => btn.addEventListener('click', () => setSettingsTab(btn.dataset.tab)));
 
   const autonomous = localStorage.getItem('mc_autonomous') === '1';
@@ -276,7 +397,7 @@ async function init() {
   setupUI();
   const [dashboard, agents] = await Promise.all([loadDashboard(), loadAgentsDetails(), loadMission()]);
   renderBoard(dashboard.columns || fallbackData.columns);
-  renderAgents(agents);
+  if (agents.length) renderAgents(agents);
   startRealtimeRefresh();
 }
 
