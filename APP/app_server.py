@@ -240,10 +240,6 @@ class Handler(SimpleHTTPRequestHandler):
     def do_POST(self):
         if self.path == '/api/missions':
             payload = self._read_json()
-            required = ['kind', 'targetFile', 'expectedChange', 'acceptanceTest']
-            missing = [k for k in required if not str(payload.get(k, '')).strip()]
-            if missing:
-                return self._json(400, {'ok': False, 'error': 'missing_contract_fields', 'missing': missing})
 
             data = load_data()
             cols = data.get('columns', [])
@@ -254,10 +250,18 @@ class Handler(SimpleHTTPRequestHandler):
                 data['columns'] = cols
 
             mission_id = payload.get('id') or f"m_{uuid.uuid4().hex[:10]}"
+            title = payload.get('title', 'Missão sem título')
+            desc = payload.get('desc', '')
+            kind = payload.get('kind') or infer_mission_kind(title, desc)
+
             mission = {
                 **payload,
                 'id': mission_id,
                 'cardId': payload.get('cardId') or mission_id,
+                'kind': kind,
+                'targetFile': payload.get('targetFile', ''),
+                'expectedChange': payload.get('expectedChange', ''),
+                'acceptanceTest': payload.get('acceptanceTest', ''),
                 'createdAt': int(time.time() * 1000),
                 'executed': False,
             }

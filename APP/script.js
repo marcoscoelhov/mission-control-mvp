@@ -25,13 +25,7 @@ const closeBroadcastBtn = document.getElementById('close-broadcast');
 const sendBroadcastBtn = document.getElementById('send-broadcast');
 const missionTitleInput = document.getElementById('mission-title');
 const missionDescInput = document.getElementById('mission-desc');
-const missionKindInput = document.getElementById('mission-kind');
-const missionTargetInput = document.getElementById('mission-target');
-const missionExpectedInput = document.getElementById('mission-expected');
-const missionAcceptanceInput = document.getElementById('mission-acceptance');
-const missionRevenueInput = document.getElementById('mission-revenue');
-const missionAutonomyInput = document.getElementById('mission-autonomy');
-const missionUrgencyInput = document.getElementById('mission-urgency');
+const missionPriorityInput = document.getElementById('mission-priority');
 const missionEtaInput = document.getElementById('mission-eta');
 
 const settingsDrawer = document.getElementById('settings-drawer');
@@ -877,15 +871,12 @@ function setupUI() {
       return;
     }
 
-    const kind = (missionKindInput.value || 'manual_required').trim();
-    const targetFile = missionTargetInput.value.trim();
-    const expectedChange = missionExpectedInput.value.trim();
-    const acceptanceTest = missionAcceptanceInput.value.trim();
-
-    if (!targetFile || !expectedChange || !acceptanceTest) {
-      showToast('Contrato obrigatório: arquivo alvo, mudança esperada e teste de aceite');
-      return;
-    }
+    const priority = (missionPriorityInput?.value || 'p2').trim();
+    const weights = priority === 'p1'
+      ? { impactRevenue: 5, impactAutonomy: 5, urgency: 5 }
+      : priority === 'p3'
+        ? { impactRevenue: 2, impactAutonomy: 2, urgency: 2 }
+        : { impactRevenue: 3, impactAutonomy: 3, urgency: 3 };
 
     const missionId = makeMissionId();
     const card = {
@@ -893,16 +884,15 @@ function setupUI() {
       cardId: missionId,
       title,
       desc,
-      kind,
-      targetFile,
-      expectedChange,
-      acceptanceTest,
-      owner: 'Stark',
+      priority,
+      owner: 'Oráculo',
       eta: missionEtaInput.value.trim() || 'agora',
-      impactRevenue: Math.max(0, Math.min(5, Number(missionRevenueInput.value || 3))),
-      impactAutonomy: Math.max(0, Math.min(5, Number(missionAutonomyInput.value || 3))),
-      urgency: Math.max(0, Math.min(5, Number(missionUrgencyInput.value || 3))),
+      ...weights,
       approved: false,
+      kind: 'manual_required',
+      targetFile: '',
+      expectedChange: '',
+      acceptanceTest: '',
     };
 
     const ok = await persistBroadcastMission(card);
@@ -922,9 +912,6 @@ function setupUI() {
 
     missionTitleInput.value = '';
     missionDescInput.value = '';
-    missionTargetInput.value = '';
-    missionExpectedInput.value = '';
-    missionAcceptanceInput.value = '';
     broadcastDrawer.classList.remove('open');
   });
 
