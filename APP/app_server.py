@@ -11,6 +11,7 @@ DATA_FILE = BASE / 'data.json'
 TRAIL_FILE = BASE / 'MISSOES_TRAJETO.md'
 MISSION_FILE = BASE / 'MISSAO.md'
 WHATSAPP_TARGETS = ['556699819658', '5566999819658']
+WHATSAPP_CLARIFY_ENABLED = False  # default off to avoid spam; enable only when explicitly needed
 
 DEFAULT_DATA = {
     'agents': [],
@@ -58,10 +59,15 @@ def dispatch_mission_to_openclaw(mission):
 
 
 def ask_whatsapp_clarification(mission, reason):
+    if not WHATSAPP_CLARIFY_ENABLED:
+        return False
+
     title = mission.get('title', 'Missão sem título')
     desc = mission.get('desc', '')
+    missing = mission.get('missingContext') or 'Objetivo final, arquivo-alvo e critério de sucesso'
     msg = (
         f"[Oráculo] Falta contexto para: {title}\n"
+        f"O que falta: {missing}\n"
         f"Motivo: {reason}\n"
         f"Resumo: {desc}\n\n"
         "Responda neste formato (1 mensagem):\n"
