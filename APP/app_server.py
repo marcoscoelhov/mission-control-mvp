@@ -4,6 +4,8 @@ import json
 import subprocess
 import time
 import uuid
+import hashlib
+from urllib.parse import urlparse, unquote
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent
@@ -30,6 +32,9 @@ DEFAULT_DATA = {
     'feed': [],
     'autonomous': False,
     'missionIndex': {},
+    'auditTrail': [],
+    'transitionKeys': {},
+    'telemetryCache': {'updatedAt': 0, 'payload': {}},
 }
 
 
@@ -362,7 +367,122 @@ def ensure_execution_defaults(mission):
     return mission_id
 
 
+def record_transition(data, mission_id, from_col, to_col, actor='system', reason='update', title='Missão sem título', transition_id=None):
+    if not mission_id:
+        return None
+
+    ts = now_ms()
+    base_key = transition_id or f"{mission_id}:{from_col}->{to_col}:{actor}:{reason}".lower()
+    digest = hashlib.sha1(base_key.encode('utf-8')).hexdigest()[:16]
+    key_slot = data.setdefault('transitionKeys', {})
+    if key_slot.get(digest):
+        return None
+    key_slot[digest] = ts
+
+    event = {
+        'id': f"tr_{uuid.uuid4().hex[:12]}",
+        'missionId': mission_id,
+        'from': from_col,
+        'to': to_col,
+        'actor': actor,
+        'reason': reason,
+        'timestamp': ts,
+        'title': title,
+    }
+    trail = data.setdefault('auditTrail', [])
+    trail.append(event)
+    if len(trail) > 5000:
+        data['auditTrail'] = trail[-5000:]
+    return event
+
+
+def get_mission_timeline(data, mission_id):
+    needle = str(mission_id or '').strip()
+    if not needle:
+        return []
+    trail = data.get('auditTrail', []) or []
+    out = [e for e in trail if str(e.get('missionId') or '').strip() == needle]
+    out.sort(key=lambda x: int(x.get('timestamp') or 0))
+    return out
+
+
+def dedupe_board_items(data):
+    seen = set()
+    for col in data.get('columns', []) or []:
+        unique = []
+        for m in col.get('items', []) or []:
+            mid = ensure_mission_id(m)
+            if mid in seen:
+                continue
+            seen.add(mid)
+            unique.append(m)
+        col['items'] = unique
+
+
+def build_openclaw_telemetry(data):
+    now = now_ms()
+    cache = data.setdefault('telemetryCache', {'updatedAt': 0, 'payload': {}})
+    if (now - int(cache.get('updatedAt') or 0)) < 10000 and cache.get('payload'):
+        return cache['payload']
+
+    sessions = []
+    source_path = ''
+    try:
+        r = subprocess.run(['openclaw', 'sessions', '--json', '--active', '240'], capture_output=True, text=True, timeout=20)
+        if r.returncode == 0 and (r.stdout or '').strip():
+            parsed = json.loads(r.stdout)
+            source_path = parsed.get('path', '')
+            sessions = parsed.get('sessions', []) or []
+    except Exception:
+        sessions = []
+
+    agents = {}
+    active_cut = now - (15 * 60 * 1000)
+
+    for s in sessions:
+        sid = str(s.get('id') or s.get('sessionId') or '')
+        title = str(s.get('title') or s.get('name') or sid or 'session')
+        updated = int(s.get('updatedAt') or s.get('lastActivityAt') or s.get('createdAt') or 0)
+        owner_raw = str(s.get('agent') or s.get('agentId') or s.get('owner') or '').strip() or 'unknown'
+        owner = owner_raw.lower()
+
+        bucket = agents.setdefault(owner, {
+            'agentId': owner,
+            'agentName': owner_raw,
+            'status': 'idle',
+            'lastActivityAt': 0,
+            'activeSessions': 0,
+            'sessions': [],
+        })
+        if updated > bucket['lastActivityAt']:
+            bucket['lastActivityAt'] = updated
+        if updated >= active_cut:
+            bucket['activeSessions'] += 1
+        bucket['sessions'].append({'id': sid, 'title': title, 'updatedAt': updated})
+
+    for b in agents.values():
+        b['status'] = 'working' if b['activeSessions'] > 0 else 'idle'
+        b['sessions'] = sorted(b['sessions'], key=lambda x: int(x.get('updatedAt') or 0), reverse=True)[:8]
+
+    payload = {
+        'ok': True,
+        'source': 'openclaw_sessions',
+        'sourcePath': source_path,
+        'updatedAt': now,
+        'windowMinutes': 15,
+        'summary': {
+            'totalSessions': len(sessions),
+            'activeSessions': sum(1 for s in sessions if int(s.get('updatedAt') or s.get('lastActivityAt') or s.get('createdAt') or 0) >= active_cut),
+            'agentsTracked': len(agents),
+        },
+        'agents': sorted(list(agents.values()), key=lambda x: x['agentId']),
+    }
+    data['telemetryCache'] = {'updatedAt': now, 'payload': payload}
+    return payload
+
+
 def build_mission_index(data):
+    dedupe_board_items(data)
     idx = {}
     for col in data.get('columns', []) or []:
         for mission in col.get('items', []) or []:
@@ -415,6 +535,7 @@ def route_without_proof(data, mission, reason):
     )
 
     target['items'] = [mission] + (target.get('items', []) or [])
+    record_transition(data, mission.get('id', 'unknown'), 'done', 'needs_clarification' if needs_clar else 'failed', actor='alfred', reason='missing_execution_proof', title=mission.get('title', 'Missão sem título'))
     append_trail_entry(mission.get('id', 'unknown'), mission.get('title', 'Missão sem título'), f"Bloqueado Done sem proof: {reason}")
 
 
@@ -445,19 +566,53 @@ class Handler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
-        if self.path == '/api/health':
+        parsed = urlparse(self.path)
+        path = parsed.path
+
+        if path == '/api/health':
             data = load_data()
             return self._json(200, {'ok': True, 'autonomous': bool(data.get('autonomous'))})
-        if self.path == '/api/dashboard':
+        if path == '/api/dashboard':
             data = load_data()
             build_mission_index(data)
             for c in data.get('columns', []) or []:
                 for m in c.get('items', []) or []:
                     ensure_execution_defaults(m)
+                    tl = get_mission_timeline(data, m.get('id'))
+                    m['timelineCount'] = len(tl)
+                    if tl:
+                        m['latestTransition'] = tl[-1]
             return self._json(200, data)
-        if self.path == '/api/chat':
+        if path == '/api/chat':
             return self._json(200, load_chat())
-        if self.path == '/api/openclaw/agents/details':
+        if path == '/api/openclaw/telemetry':
+            data = load_data()
+            payload = build_openclaw_telemetry(data)
+            save_data(data)
+            return self._json(200, payload)
+        if path.startswith('/api/missions/') and path.endswith('/timeline'):
+            mission_id = unquote(path[len('/api/missions/'): -len('/timeline')]).strip('/')
+            if not mission_id:
+                return self._json(400, {'ok': False, 'error': 'missing_mission_id'})
+            data = load_data()
+            timeline = get_mission_timeline(data, mission_id)
+            _, _, mission = find_mission_ref(data, mission_id)
+            ex = normalize_execution(mission) if mission else {}
+            return self._json(200, {
+                'ok': True,
+                'missionId': mission_id,
+                'timeline': timeline,
+                'count': len(timeline),
+                'executionProof': {
+                    'effective': bool(mission.get('effective')) if mission else False,
+                    'status': ex.get('status') if ex else None,
+                    'evidence': ex.get('evidence', []) if ex else [],
+                    'sessionId': ex.get('sessionId') if ex else None,
+                    'agent': ex.get('agent') if ex else None,
+                    'updatedAt': ex.get('updatedAt') if ex else None,
+                },
+            })
+        if path == '/api/openclaw/agents/details':
             details = BASE / 'openclaw-agents-details.json'
             if details.exists():
                 try:
@@ -486,6 +641,18 @@ class Handler(SimpleHTTPRequestHandler):
             title = payload.get('title', 'Missão sem título')
             desc = payload.get('desc', '')
             priority = payload.get('priority', 'p2')
+
+            _, _, existing = find_mission_ref(data, mission_id)
+            if existing is not None:
+                return self._json(200, {
+                    'ok': True,
+                    'missionId': mission_id,
+                    'dispatched': False,
+                    'needsClarification': bool(existing.get('needsClarification')),
+                    'triageSource': existing.get('triageSource', 'idempotent'),
+                    'idempotent': True,
+                })
+
             triage = triage_with_oraculo(title, desc, priority)
 
             text_words = len((f"{title} {desc}".strip()).split())
@@ -534,9 +701,11 @@ class Handler(SimpleHTTPRequestHandler):
                 mission['executionStatus'] = 'needs_clarification'
                 mission['needsUserAction'] = mission.get('missingContext') or 'Responder contexto no WhatsApp.'
                 clar['items'] = [mission] + (clar.get('items', []) or [])
+                record_transition(data, mission['id'], 'broadcast', 'needs_clarification', actor='oraculo', reason='triage_needs_clarification', title=mission.get('title', 'Missão sem título'))
                 append_trail_entry(mission['id'], mission.get('title', 'Missão sem título'), 'Oráculo classificou como ambígua e pediu contexto no WhatsApp.')
             else:
                 inbox['items'] = [mission] + (inbox.get('items', []) or [])
+                record_transition(data, mission['id'], 'broadcast', 'inbox', actor='stark', reason='mission_created', title=mission.get('title', 'Missão sem título'))
                 append_trail_entry(mission['id'], mission.get('title', 'Missão sem título'), 'Missão criada via Broadcast e enviada para Inbox.')
 
             build_mission_index(data)
@@ -677,14 +846,20 @@ class Handler(SimpleHTTPRequestHandler):
             build_mission_index(data)
 
             action = payload.get('action', 'update')
-            mission_id = str(payload.get('missionId') or '').strip()
+            mission_id = str(payload.get('missionId') or payload.get('cardId') or '').strip()
             title = payload.get('title') or 'Missão sem título'
             if mission_id:
                 idx = data.get('missionIndex', {})
                 idx[mission_id] = mission_id
 
+            actor = str(payload.get('actor') or 'ui')
+            transition_id = str(payload.get('transitionId') or '').strip() or None
+
             if action == 'move':
-                append_trail_entry(mission_id or 'unknown', title, f"Movida de {payload.get('fromColumn', '?')} para {payload.get('toColumn', '?')}.")
+                from_c = payload.get('fromColumn', '?')
+                to_c = payload.get('toColumn', '?')
+                record_transition(data, mission_id or 'unknown', from_c, to_c, actor=actor, reason='manual_move', title=title, transition_id=transition_id)
+                append_trail_entry(mission_id or 'unknown', title, f"Movida de {from_c} para {to_c}.")
             elif action in ('approve', 'autonomous_approve'):
                 append_trail_entry(mission_id or 'unknown', title, 'Aprovada por Jarvis.')
             elif action == 'auto_delegate' and payload.get('title'):
@@ -693,17 +868,23 @@ class Handler(SimpleHTTPRequestHandler):
                 from_col = payload.get('from', '?')
                 to_col = payload.get('to', '?')
                 owner = payload.get('owner', 'Stark')
+                record_transition(data, mission_id or 'unknown', from_col, to_col, actor=owner, reason='autonomous_move', title=title, transition_id=transition_id)
                 append_trail_entry(mission_id or 'unknown', title, f"Fluxo autônomo: {from_col} → {to_col} (owner: {owner}).")
                 if str(to_col).lower() == 'in_progress':
                     dispatched = dispatch_mission_to_openclaw({'id': mission_id, 'title': title, 'desc': payload.get('desc', ''), 'owner': owner})
                     append_trail_entry(mission_id or 'unknown', title, 'Despacho real para OpenClaw enviado.' if dispatched else 'Falha ao despachar para OpenClaw.')
             elif action == 'clarification_reply':
-                append_trail_entry(mission_id or 'unknown', title, f"Monarca respondeu clarificação; missão movida de {payload.get('fromColumn', '?')} para {payload.get('toColumn', '?')}.")
+                from_c = payload.get('fromColumn', '?')
+                to_c = payload.get('toColumn', '?')
+                record_transition(data, mission_id or 'unknown', from_c, to_c, actor=actor, reason='clarification_reply', title=title, transition_id=transition_id)
+                append_trail_entry(mission_id or 'unknown', title, f"Monarca respondeu clarificação; missão movida de {from_c} para {to_c}.")
                 clar = str(payload.get('clarification', '')).strip()
                 if clar:
                     append_trail_entry(mission_id or 'unknown', title, f"Contexto recebido: {clar[:600]}")
             elif action == 'delete_card':
-                append_trail_entry(mission_id or 'unknown', title, f"Card removido manualmente da coluna {payload.get('fromColumn', '?')}.")
+                from_c = payload.get('fromColumn', '?')
+                record_transition(data, mission_id or 'unknown', from_c, 'deleted', actor=actor, reason='delete_card', title=title, transition_id=transition_id)
+                append_trail_entry(mission_id or 'unknown', title, f"Card removido manualmente da coluna {from_c}.")
 
             enforce_done_proof(data)
             save_data(data)
@@ -726,7 +907,7 @@ class Handler(SimpleHTTPRequestHandler):
                 items = col.get('items', []) or []
                 kept = []
                 for m in items:
-                    mid = str(m.get('id') or '').strip()
+                    mid = str(m.get('id') or m.get('cardId') or '').strip()
                     if mid == mission_id:
                         removed = True
                         removed_from.append(str(col.get('name') or '?'))
@@ -741,6 +922,8 @@ class Handler(SimpleHTTPRequestHandler):
             if isinstance(idx, dict):
                 idx.pop(mission_id, None)
 
+            for col_name in removed_from:
+                record_transition(data, mission_id, col_name, 'deleted', actor='ui', reason='delete_card', title=payload.get('title') or 'Missão sem título')
             append_trail_entry(mission_id, payload.get('title') or 'Missão sem título', f"Card removido manualmente (endpoint dedicado) das colunas: {', '.join(removed_from)}.")
             save_data(data)
             return self._json(200, {'ok': True, 'removedFrom': removed_from})

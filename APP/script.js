@@ -65,6 +65,7 @@ let inboxMissions = [];
 let activityLog = [];
 let executionsWindow = [];
 let selectedMissionKey = 'system';
+let telemetryState = { agents: [], summary: { activeSessions: 0 } };
 
 const normalizeColumnKey = (name = '') => name.toLowerCase().trim().replace(/\s+/g, '_');
 const prettyColumn = (key = '') => key.replaceAll('_', ' ').replace(/\b\w/g, (m) => m.toUpperCase());
@@ -175,11 +176,16 @@ function setAutonomousVisuals(enabled) {
 
 function updateHeaderMetrics() {
   if (agentsActiveValue) {
-    const active = [...document.querySelectorAll('.status')].filter((el) => {
-      const t = (el.textContent || '').toLowerCase();
-      return t.includes('trabalhando') || t.includes('online');
-    }).length;
-    agentsActiveValue.textContent = String(active);
+    const teleActive = Number(telemetryState?.summary?.activeSessions || 0);
+    if (teleActive > 0) {
+      agentsActiveValue.textContent = String(teleActive);
+    } else {
+      const active = [...document.querySelectorAll('.status')].filter((el) => {
+        const t = (el.textContent || '').toLowerCase();
+        return t.includes('trabalhando') || t.includes('online');
+      }).length;
+      agentsActiveValue.textContent = String(active);
+    }
   }
 
   if (tasksQueueValue) {
@@ -308,6 +314,17 @@ async function loadAgentsDetails() {
   return [];
 }
 
+async function loadTelemetry() {
+  try {
+    const d = await fetchJson(API.telemetry || '/api/openclaw/telemetry');
+    if (Array.isArray(d?.agents)) {
+      telemetryState = d;
+      return d;
+    }
+  } catch (_) {}
+  return telemetryState;
+}
+
 async function checkBackendConnection() {
   let ok = false;
   try {
@@ -334,6 +351,7 @@ const API = {
   move: localStorage.getItem('mc_api_move') || '/api/dashboard/move',
   boardState: localStorage.getItem('mc_api_board_state') || '/api/dashboard/state',
   autonomous: localStorage.getItem('mc_api_autonomous') || '/api/autonomous/mode',
+  telemetry: localStorage.getItem('mc_api_telemetry') || '/api/openclaw/telemetry',
 };
 
 function snapshotBoard() {
@@ -377,8 +395,16 @@ async function persistBroadcastMission(payload) {
   }
 }
 
+function makeTransitionId(prefix = 'tr') {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
 async function persistBoardState(action, extra = {}) {
-  return apiPost(API.boardState, { action, board: boardState, ...extra });
+  const payload = { action, board: boardState, actor: 'ui', ...extra };
+  if (!payload.transitionId && ['move', 'autonomous_move', 'clarification_reply', 'delete_card'].includes(action)) {
+    payload.transitionId = makeTransitionId(action);
+  }
+  return apiPost(API.boardState, payload);
 }
 
 async function deleteCardReal(missionId, title = '') {
@@ -497,6 +523,7 @@ function renderAgents(agents) {
     const n = (normalizeCard(m).owner || '').toLowerCase();
     if (n) workOwners.add(n);
   });
+  const telemetryMap = new Map((telemetryState?.agents || []).map((a) => [String(a.agentId || '').toLowerCase(), a]));
 
   const rankWeight = { General: 0, Oficial: 1, Conselho: 2 };
   const ordered = [...agents].sort((a, b) => {
@@ -526,7 +553,9 @@ function renderAgents(agents) {
     agentsList.appendChild(header);
 
     list.forEach((agent) => {
-      const computedStatus = workOwners.has((agent.name || '').toLowerCase()) ? 'trabalhando' : (agent.status || 'online');
+      const tele = telemetryMap.get((agent.id || agent.name || '').toLowerCase());
+      const telemetryStatus = tele?.status === 'working' ? 'trabalhando' : (tele?.status === 'idle' ? 'idle' : null);
+      const computedStatus = telemetryStatus || (workOwners.has((agent.name || '').toLowerCase()) ? 'trabalhando' : (agent.status || 'online'));
       const statusClass = (computedStatus || '').toLowerCase().replace(/\s+/g, '-');
       const item = document.createElement('article');
       item.className = `agent-item ${agent.id === selectedAgentId ? 'active' : ''}`;
@@ -711,6 +740,7 @@ function createCard(item, columnKey = '') {
     renderBoard(boardState);
 
     const ok = await persistBoardState('clarification_reply', {
+      missionId: card.dataset.missionId || card.dataset.cardId,
       cardId: card.dataset.cardId,
       title: card.dataset.title,
       fromColumn: currentCol,
@@ -874,7 +904,7 @@ function renderBoard(columns) {
       const toIndex = [...cards.querySelectorAll('.card')].indexOf(draggedCard);
       updateAllCounts();
       const okMove = await persistMove({ cardId: draggedCard.dataset.cardId, title: draggedCard.dataset.title, fromColumn, toColumn, toIndex });
-      const okBoard = await persistBoardState('move', { cardId: draggedCard.dataset.cardId, fromColumn, toColumn, toIndex });
+      const okBoard = await persistBoardState('move', { missionId: draggedCard.dataset.missionId || draggedCard.dataset.cardId, cardId: draggedCard.dataset.cardId, fromColumn, toColumn, toIndex });
       if (STRICT_PERSISTENCE && (!okMove || !okBoard)) {
         showToast('Falha ao persistir movimentação no backend');
         restoreBoard(before);
@@ -1100,7 +1130,7 @@ function setLiveTab(tab) {
 function startRealtimeRefresh() {
   if (refreshTimer) clearInterval(refreshTimer);
   refreshTimer = setInterval(async () => {
-    const agents = await loadAgentsDetails();
+    const [agents] = await Promise.all([loadAgentsDetails(), loadTelemetry()]);
     if (agents.length) renderAgents(agents);
     if (chatDrawer?.classList.contains('open')) await refreshAgentChat();
   }, refreshMs);
@@ -1269,7 +1299,7 @@ async function init() {
   renderLiveFeed();
   setLiveTab('history');
   await checkBackendConnection();
-  const [dashboard, agents] = await Promise.all([loadDashboard(), loadAgentsDetails(), loadMission()]);
+  const [dashboard, agents] = await Promise.all([loadDashboard(), loadAgentsDetails(), loadMission(), loadTelemetry()]);
   renderBoard(dashboard.columns || fallbackData.columns);
   if (agents.length) renderAgents(agents);
   addLiveEvent('Live inicializado', 'Histórico pronto para acompanhar o que foi feito.');
