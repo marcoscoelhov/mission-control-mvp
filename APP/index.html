@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mission Control Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="bg-orb orb-1"></div>
+    <div class="bg-orb orb-2"></div>
+
+    <div class="app-shell">
+      <header class="topbar glass">
+        <div class="brand">
+          <span class="dot"></span>
+          <h1>MISSION CONTROL</h1>
+          <span class="badge">SiteGPT</span>
+        </div>
+
+        <div class="metrics">
+          <div class="metric">
+            <strong>14</strong>
+            <span>Agents Active</span>
+          </div>
+          <div class="metric">
+            <strong>283</strong>
+            <span>Tasks in Queue</span>
+          </div>
+        </div>
+
+        <nav class="tabs">
+          <button class="tab active">Active</button>
+          <button class="tab">Chat</button>
+          <button class="tab">Broadcast</button>
+          <button class="tab">Docs</button>
+        </nav>
+      </header>
+
+      <main class="workspace">
+        <aside class="panel glass agents-panel">
+          <div class="panel-head">
+            <h2>Agents</h2>
+            <span class="count">16</span>
+          </div>
+
+          <div class="agents-list" id="agents-list"></div>
+        </aside>
+
+        <section class="panel glass board-panel">
+          <div class="panel-head">
+            <h2>Mission Queue</h2>
+            <div class="queue-meta">
+              <span class="pill">85</span>
+              <span class="muted">283 active</span>
+            </div>
+          </div>
+
+          <div class="board-filters">
+            <button class="chip active">All</button>
+            <button class="chip">Inbox</button>
+            <button class="chip">Assigned</button>
+            <button class="chip">Active</button>
+            <button class="chip">Review</button>
+            <button class="chip">Done</button>
+            <button class="chip warning">Waiting</button>
+          </div>
+
+          <div class="kanban" id="kanban"></div>
+        </section>
+
+        <aside class="panel glass live-panel">
+          <div class="panel-head">
+            <h2>Live</h2>
+            <span class="live-dot">●</span>
+          </div>
+
+          <div class="live-toolbar">
+            <button class="chip active">All Agents</button>
+            <button class="chip">Shuri</button>
+            <button class="chip">Vision</button>
+          </div>
+
+          <div class="live-feed" id="live-feed"></div>
+        </aside>
+      </main>
+    </div>
+
+    <script src="./script.js"></script>
+  </body>
+</html>
