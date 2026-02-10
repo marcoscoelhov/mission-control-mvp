@@ -1,10 +1,10 @@
 const fallbackData = {
   columns: [
-    { name: 'Inbox', items: [['API de cobrança recorrente', 'Criar serviço de assinatura com webhook.', 'Stark', '4m']] },
-    { name: 'Assigned', items: [['Landing de oferta premium', 'Página de conversão com prova social.', 'Wanda', '40m']] },
-    { name: 'In Progress', items: [['Pipeline de deploy', 'Padronizar build/deploy com rollback.', 'Thanos', '2d']] },
-    { name: 'Review', items: [['Auditoria de fluxo comercial', 'Checar gargalos no handoff vendas→sucesso.', 'Alfred', '3d']] },
-    { name: 'Done', items: [['Dashboard baseline', 'Estrutura visual inicial publicada.', 'Stark', '2d']] },
+    { name: 'Inbox', items: [] },
+    { name: 'Assigned', items: [] },
+    { name: 'In Progress', items: [] },
+    { name: 'Review', items: [] },
+    { name: 'Done', items: [] },
   ],
 };
 
