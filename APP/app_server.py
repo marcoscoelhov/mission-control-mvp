@@ -18,6 +18,10 @@ DEFAULT_DATA = {
         {'name': 'In Progress', 'items': []},
         {'name': 'Review', 'items': []},
         {'name': 'Done', 'items': []},
+        {'name': 'Blocked', 'items': []},
+        {'name': 'Failed', 'items': []},
+        {'name': 'Needs Clarification', 'items': []},
+        {'name': 'Needs Monarca Decision', 'items': []},
     ],
     'feed': [],
     'autonomous': False,
@@ -274,14 +278,29 @@ class Handler(SimpleHTTPRequestHandler):
             mission['effective'] = bool(ok)
             mission['executed'] = bool(ok)
             mission['effectEvidence'] = evidence
+
+            status = 'effective'
+            needs_user_action = ''
+            if not ok:
+                if kind == 'manual_required':
+                    status = 'needs_clarification'
+                    needs_user_action = 'Missão ambígua. Defina escopo, arquivo-alvo e critério de sucesso.'
+                else:
+                    status = 'failed'
+                    needs_user_action = 'Execução técnica falhou. Revisar evidência e ajustar missão.'
+            mission['executionStatus'] = status
+            mission['needsUserAction'] = needs_user_action
+
             if col is not None and idx is not None:
                 col['items'][idx] = mission
 
             mission_id = mission.get('id') or mission.get('cardId') or mission.get('title', 'unknown')
             append_trail_entry(mission_id, mission.get('title', 'Missão sem título'), f"Execução ({kind}): {'OK' if ok else 'FALHOU'} | {'; '.join(evidence)}")
+            if needs_user_action:
+                append_trail_entry(mission_id, mission.get('title', 'Missão sem título'), f"Ação necessária: {needs_user_action}")
 
             save_data(data)
-            return self._json(200, {'ok': ok, 'kind': kind, 'evidence': evidence})
+            return self._json(200, {'ok': ok, 'kind': kind, 'evidence': evidence, 'status': status, 'needsUserAction': needs_user_action})
 
         if self.path == '/api/dashboard/state':
             payload = self._read_json()

@@ -220,6 +220,8 @@ function normalizeCard(item) {
     approved: Boolean(item.approved),
     effective: Boolean(item.effective),
     needsEffectiveness: Boolean(item.needsEffectiveness),
+    executionStatus: item.executionStatus || '',
+    needsUserAction: item.needsUserAction || '',
   };
 }
 
@@ -455,6 +457,8 @@ function serializeCard(card) {
     approved: card.dataset.approved === '1',
     effective: card.dataset.effective === '1',
     needsEffectiveness: card.dataset.needsEffectiveness === '1',
+    executionStatus: card.dataset.executionStatus || '',
+    needsUserAction: card.dataset.needsUserAction || '',
   };
 }
 
@@ -474,6 +478,8 @@ function createCard(item) {
   card.dataset.approved = c.approved ? '1' : '0';
   card.dataset.effective = c.effective ? '1' : '0';
   card.dataset.needsEffectiveness = c.needsEffectiveness ? '1' : '0';
+  card.dataset.executionStatus = c.executionStatus || '';
+  card.dataset.needsUserAction = c.needsUserAction || '';
 
   const score = priorityScore(c);
   const approveBtn = c.approved
@@ -482,6 +488,7 @@ function createCard(item) {
   const effectiveness = c.effective
     ? `<span class="chip mini approved">Efetiva</span>`
     : (c.needsEffectiveness ? `<span class="chip mini">Revisão de efetividade</span>` : `<span class="chip mini">Efetividade pendente</span>`);
+  const executionBadge = c.executionStatus ? `<span class="chip mini">${escapeHtml(c.executionStatus)}</span>` : '';
 
   card.innerHTML = `
     <h3>${escapeHtml(c.title)}</h3>
@@ -496,7 +503,8 @@ function createCard(item) {
       <span>${escapeHtml(c.owner)}</span>
       <span>${escapeHtml(c.eta)} ago</span>
     </div>
-    <div class="approve-row">${approveBtn} ${effectiveness}</div>
+    <div class="approve-row">${approveBtn} ${effectiveness} ${executionBadge}</div>
+    ${c.needsUserAction ? `<div class="empty-column" style="margin-top:8px">Ação necessária: ${escapeHtml(c.needsUserAction)}</div>` : ''}
   `;
 
   card.querySelector('[data-action="approve"]')?.addEventListener('click', async (e) => {
@@ -624,6 +632,15 @@ function getColumn(key) {
   return boardState.find((c) => normalizeColumnKey(c.name) === key);
 }
 
+function ensureColumn(key, label) {
+  let col = getColumn(key);
+  if (!col) {
+    col = { name: label, items: [] };
+    boardState.push(col);
+  }
+  return col;
+}
+
 async function autoDelegateInbox(silent = false) {
   const assignedCol = getColumn('assigned');
   if (!assignedCol) return;
@@ -736,15 +753,39 @@ async function autonomousTick() {
       const before = snapshotBoard();
       const exec = await executeMissionReal(first);
       if (!exec.ok) {
+        const status = exec.status || 'failed';
+        const needsUserAction = exec.needsUserAction || 'Defina melhor o escopo e critério de sucesso.';
         addLiveEvent('Execução real falhou', `${first.title} não teve efetividade real (${(exec.evidence || []).join(', ')}).`, true, { missionKey: first.cardId || makeCardId(first.title), missionTitle: first.title });
-        inProgress.items[0] = { ...first, effective: false, needsEffectiveness: true, owner: 'Alfred' };
+
+        inProgress.items.shift();
+        const target = status === 'needs_clarification'
+          ? ensureColumn('needs_clarification', 'Needs Clarification')
+          : status === 'needs_monarca_decision'
+            ? ensureColumn('needs_monarca_decision', 'Needs Monarca Decision')
+            : ensureColumn('failed', 'Failed');
+
+        target.items.unshift({
+          ...first,
+          effective: false,
+          needsEffectiveness: true,
+          owner: 'Alfred',
+          executionStatus: status,
+          needsUserAction,
+        });
+
         renderBoard(boardState);
         const persisted = await persistBoardState('effectiveness_reopen', { title: first.title, owner: 'Alfred' });
         if (STRICT_PERSISTENCE && !persisted) restoreBoard(before);
         return;
       }
 
-      inProgress.items[0] = { ...first, effective: true, needsEffectiveness: false };
+      inProgress.items[0] = {
+        ...first,
+        effective: true,
+        needsEffectiveness: false,
+        executionStatus: 'effective',
+        needsUserAction: '',
+      };
       renderBoard(boardState);
       await persistBoardState('effectiveness_ok', { title: first.title });
       addLiveEvent('Efetividade confirmada', `${first.title} validada com evidência real.`, true, { missionKey: first.cardId || makeCardId(first.title), missionTitle: first.title });
