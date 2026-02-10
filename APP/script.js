@@ -89,6 +89,20 @@ const makeCardId = (title = '') =>
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '')}`;
 
+function normalizeAgent(agent) {
+  if (Array.isArray(agent)) {
+    const [icon, name, role] = agent;
+    return { icon, name, role, status: 'working' };
+  }
+
+  return {
+    icon: agent?.icon || '🤖',
+    name: agent?.name || 'Agent',
+    role: agent?.role || 'OpenClaw Agent',
+    status: agent?.status || 'online',
+  };
+}
+
 async function loadData() {
   const endpoints = ['/api/dashboard', './data.json'];
 
@@ -98,12 +112,27 @@ async function loadData() {
       if (!res.ok) continue;
       const json = await res.json();
       return normalizeData(json);
-    } catch (_) {
-      // try next endpoint
-    }
+    } catch (_) {}
   }
 
   return fallbackData;
+}
+
+async function loadOpenClawAgents() {
+  const endpoints = ['/api/openclaw/agents', './openclaw-agents.json'];
+
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) continue;
+      const json = await res.json();
+      if (Array.isArray(json?.agents) && json.agents.length > 0) {
+        return json.agents.map(normalizeAgent);
+      }
+    } catch (_) {}
+  }
+
+  return null;
 }
 
 async function persistMove(payload) {
@@ -117,9 +146,7 @@ async function persistMove(payload) {
         body: JSON.stringify(payload),
       });
       if (res.ok) return true;
-    } catch (_) {
-      // try next endpoint
-    }
+    } catch (_) {}
   }
 
   return false;
@@ -159,7 +186,7 @@ function createCard([title, desc, owner, eta]) {
 
 function renderAgents(agents) {
   agentsList.innerHTML = '';
-  agents.forEach(([icon, name, role]) => {
+  agents.map(normalizeAgent).forEach(({ icon, name, role, status }) => {
     const item = document.createElement('article');
     item.className = 'agent-item';
     item.innerHTML = `
@@ -168,7 +195,7 @@ function renderAgents(agents) {
         <strong>${name}</strong>
         <span>${role}</span>
       </div>
-      <div class="status">Working</div>
+      <div class="status">${status}</div>
     `;
     agentsList.appendChild(item);
   });
@@ -209,7 +236,6 @@ function renderBoard(columns) {
       else cards.appendChild(draggedCard);
 
       const toIndex = [...cards.querySelectorAll('.card')].indexOf(draggedCard);
-
       updateAllCounts();
 
       const ok = await persistMove({
@@ -220,9 +246,7 @@ function renderBoard(columns) {
         toIndex,
       });
 
-      if (!ok) {
-        console.warn('Não foi possível persistir movimento no backend (UI local mantida).');
-      }
+      if (!ok) console.warn('Não foi possível persistir movimento no backend (UI local mantida).');
     });
 
     col.items.forEach((item) => cards.appendChild(createCard(item)));
@@ -270,7 +294,9 @@ function setupUI() {
 async function init() {
   setupUI();
   const data = await loadData();
-  renderAgents(data.agents);
+  const openclawAgents = await loadOpenClawAgents();
+
+  renderAgents(openclawAgents || data.agents);
   renderBoard(data.columns);
   renderFeed(data.feed);
 }

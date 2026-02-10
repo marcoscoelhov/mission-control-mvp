@@ -1,0 +1,21 @@
+{
+  "agents": [
+    {
+      "id": "stark",
+      "icon": "🧠",
+      "name": "Stark",
+      "role": "Orchestrator",
+      "status": "online",
+      "source": "openclaw"
+    },
+    {
+      "id": "thor",
+      "icon": "⚡",
+      "name": "Thor",
+      "role": "Deploy / GitHub",
+      "status": "active",
+      "source": "subagent"
+    }
+  ],
+  "updatedAt": "2026-02-10T16:33:00Z"
+}
