@@ -75,6 +75,20 @@ const normalizeData = (raw) => ({
   feed: Array.isArray(raw?.feed) ? raw.feed : fallbackData.feed,
 });
 
+const normalizeColumnKey = (name = '') =>
+  name
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, '_');
+
+const makeCardId = (title = '') =>
+  `card_${title
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')}`;
+
 async function loadData() {
   const endpoints = ['/api/dashboard', './data.json'];
 
@@ -92,10 +106,33 @@ async function loadData() {
   return fallbackData;
 }
 
+async function persistMove(payload) {
+  const endpoints = ['/api/dashboard/move', '/api/cards/move', '/api/card/move'];
+
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) return true;
+    } catch (_) {
+      // try next endpoint
+    }
+  }
+
+  return false;
+}
+
 function createCard([title, desc, owner, eta]) {
   const card = document.createElement('article');
   card.className = 'card';
   card.draggable = true;
+
+  const cardId = makeCardId(title);
+  card.dataset.cardId = cardId;
+  card.dataset.title = title;
 
   card.innerHTML = `
     <h3>${title}</h3>
@@ -144,6 +181,9 @@ function renderBoard(columns) {
     const column = document.createElement('section');
     column.className = 'column';
 
+    const columnKey = normalizeColumnKey(col.name);
+    column.dataset.column = columnKey;
+
     const cards = document.createElement('div');
     cards.className = 'cards';
 
@@ -154,19 +194,35 @@ function renderBoard(columns) {
 
     cards.addEventListener('dragleave', () => cards.classList.remove('drag-over'));
 
-    cards.addEventListener('drop', (e) => {
+    cards.addEventListener('drop', async (e) => {
       e.preventDefault();
       cards.classList.remove('drag-over');
       if (!draggedCard) return;
+
+      const fromColumnEl = draggedCard.closest('.column');
+      const fromColumn = fromColumnEl?.dataset.column || null;
+      const toColumn = column.dataset.column;
 
       const siblings = [...cards.querySelectorAll('.card:not(.dragging)')];
       const next = siblings.find((s) => e.clientY <= s.getBoundingClientRect().top + s.offsetHeight / 2);
       if (next) cards.insertBefore(draggedCard, next);
       else cards.appendChild(draggedCard);
 
-      const countEl = column.querySelector('.column-head span:last-child');
-      if (countEl) countEl.textContent = String(cards.querySelectorAll('.card').length);
+      const toIndex = [...cards.querySelectorAll('.card')].indexOf(draggedCard);
+
       updateAllCounts();
+
+      const ok = await persistMove({
+        cardId: draggedCard.dataset.cardId,
+        title: draggedCard.dataset.title,
+        fromColumn,
+        toColumn,
+        toIndex,
+      });
+
+      if (!ok) {
+        console.warn('Não foi possível persistir movimento no backend (UI local mantida).');
+      }
     });
 
     col.items.forEach((item) => cards.appendChild(createCard(item)));
