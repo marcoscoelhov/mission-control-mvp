@@ -169,10 +169,17 @@
           <span>Auto-refresh (segundos)</span>
           <input type="number" id="refresh-seconds" min="5" step="5" value="15" />
         </label>
+
+        <label class="field"><span>Endpoint Health</span><input type="text" id="api-health" placeholder="/api/health" /></label>
+        <label class="field"><span>Endpoint Broadcast</span><input type="text" id="api-broadcast" placeholder="/api/missions" /></label>
+        <label class="field"><span>Endpoint Move</span><input type="text" id="api-move" placeholder="/api/dashboard/move" /></label>
+        <label class="field"><span>Endpoint Board State</span><input type="text" id="api-board-state" placeholder="/api/dashboard/state" /></label>
+        <label class="field"><span>Endpoint Autônomo</span><input type="text" id="api-autonomous" placeholder="/api/autonomous/mode" /></label>
+
         <button class="chip active" id="save-general">Salvar configurações</button>
       </section>
     </aside>
 
-    <script src="./script.js?v=18"></script>
+    <script src="./script.js?v=19"></script>
   </body>
 </html>

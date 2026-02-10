@@ -38,6 +38,11 @@ const missionContent = document.getElementById('mission-content');
 const autonomousToggle = document.getElementById('autonomous-toggle');
 const autonomousStatus = document.getElementById('autonomous-status');
 const refreshSecondsInput = document.getElementById('refresh-seconds');
+const apiHealthInput = document.getElementById('api-health');
+const apiBroadcastInput = document.getElementById('api-broadcast');
+const apiMoveInput = document.getElementById('api-move');
+const apiBoardStateInput = document.getElementById('api-board-state');
+const apiAutonomousInput = document.getElementById('api-autonomous');
 const saveGeneralBtn = document.getElementById('save-general');
 const toastWrap = document.getElementById('toast-wrap');
 const throughputValue = document.getElementById('throughput-value');
@@ -199,16 +204,11 @@ async function loadAgentsDetails() {
 
 async function checkBackendConnection() {
   let ok = false;
-  for (const url of ['/api/ping', '/api/health', '/healthz']) {
-    try {
-      const res = await fetch(url, { method: 'GET', cache: 'no-store' });
-      if (res.ok) {
-        ok = true;
-        break;
-      }
-    } catch (_) {}
-  }
-  addLiveEvent('Backend', ok ? 'Conectado e respondendo persistência' : 'Sem resposta de saúde (persistência pode falhar)');
+  try {
+    const res = await fetch(API.health, { method: 'GET', cache: 'no-store' });
+    ok = res.ok;
+  } catch (_) {}
+  addLiveEvent('Backend', ok ? `Conectado (${API.health})` : `Sem resposta em ${API.health}`);
 }
 
 async function loadMission() {
@@ -222,6 +222,13 @@ async function loadMission() {
 }
 
 const STRICT_PERSISTENCE = true;
+const API = {
+  health: localStorage.getItem('mc_api_health') || '/api/health',
+  missionBroadcast: localStorage.getItem('mc_api_mission_broadcast') || '/api/missions',
+  move: localStorage.getItem('mc_api_move') || '/api/dashboard/move',
+  boardState: localStorage.getItem('mc_api_board_state') || '/api/dashboard/state',
+  autonomous: localStorage.getItem('mc_api_autonomous') || '/api/autonomous/mode',
+};
 
 function snapshotBoard() {
   return JSON.parse(JSON.stringify(boardState));
@@ -232,30 +239,29 @@ function restoreBoard(snapshot) {
   renderBoard(boardState);
 }
 
-async function apiPost(urls, payload) {
-  for (const url of urls) {
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (res.ok) return true;
-    } catch (_) {}
+async function apiPost(url, payload) {
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return res.ok;
+  } catch (_) {
+    return false;
   }
-  return false;
 }
 
 async function persistMove(payload) {
-  return apiPost(['/api/dashboard/move', '/api/cards/move', '/api/card/move'], payload);
+  return apiPost(API.move, payload);
 }
 
 async function persistBroadcastMission(payload) {
-  return apiPost(['/api/missions/broadcast', '/api/mission/broadcast', '/api/missions'], payload);
+  return apiPost(API.missionBroadcast, payload);
 }
 
 async function persistBoardState(action, extra = {}) {
-  return apiPost(['/api/dashboard/state', '/api/board/state'], { action, board: boardState, ...extra });
+  return apiPost(API.boardState, { action, board: boardState, ...extra });
 }
 
 function refreshInboxChip() {
@@ -277,7 +283,7 @@ async function saveAutonomousMode(enabled) {
   setAutonomousVisuals(enabled);
   addLiveEvent('Modo autônomo', enabled ? 'Ativado' : 'Desativado', true);
   if (enabled) autonomousTick();
-  const ok = await apiPost(['/api/autonomous/mode', '/api/reinado/ajustes'], { enabled, auto_exec_enabled: enabled });
+  const ok = await apiPost(API.autonomous, { enabled, auto_exec_enabled: enabled });
   if (STRICT_PERSISTENCE && !ok) {
     showToast('Falha ao persistir modo autônomo no backend');
   }
@@ -722,11 +728,32 @@ function setupUI() {
   autonomousToggle.addEventListener('change', () => saveAutonomousMode(autonomousToggle.checked));
 
   refreshSecondsInput.value = String(Math.round(refreshMs / 1000));
-  saveGeneralBtn.addEventListener('click', () => {
+  apiHealthInput.value = API.health;
+  apiBroadcastInput.value = API.missionBroadcast;
+  apiMoveInput.value = API.move;
+  apiBoardStateInput.value = API.boardState;
+  apiAutonomousInput.value = API.autonomous;
+
+  saveGeneralBtn.addEventListener('click', async () => {
     const secs = Math.max(5, Number(refreshSecondsInput.value || 15));
     refreshMs = secs * 1000;
     localStorage.setItem('mc_refresh_ms', String(refreshMs));
+
+    API.health = (apiHealthInput.value || '/api/health').trim();
+    API.missionBroadcast = (apiBroadcastInput.value || '/api/missions').trim();
+    API.move = (apiMoveInput.value || '/api/dashboard/move').trim();
+    API.boardState = (apiBoardStateInput.value || '/api/dashboard/state').trim();
+    API.autonomous = (apiAutonomousInput.value || '/api/autonomous/mode').trim();
+
+    localStorage.setItem('mc_api_health', API.health);
+    localStorage.setItem('mc_api_mission_broadcast', API.missionBroadcast);
+    localStorage.setItem('mc_api_move', API.move);
+    localStorage.setItem('mc_api_board_state', API.boardState);
+    localStorage.setItem('mc_api_autonomous', API.autonomous);
+
     startRealtimeRefresh();
+    await checkBackendConnection();
+    showToast('Configurações salvas');
   });
 }
 
