@@ -40,6 +40,7 @@
           <button class="tab">Chat</button>
           <button class="tab">Broadcast</button>
           <button class="tab">Docs</button>
+          <button class="header-icon-btn" id="open-settings" aria-label="Abrir configurações" title="Missão, modo autônomo e configurações">⚙</button>
           <button class="header-icon-btn" id="toggle-live" aria-label="Expandir Live" title="Mostrar/ocultar painel Live">
             <span class="icon-bars"><i></i><i></i><i></i></span>
           </button>
@@ -93,6 +94,41 @@
       </main>
     </div>
 
-    <script src="./script.js?v=8"></script>
+    <aside class="settings-drawer glass" id="settings-drawer" aria-hidden="true">
+      <div class="panel-head">
+        <h2>Configurações</h2>
+        <button class="header-icon-btn" id="close-settings" aria-label="Fechar">✕</button>
+      </div>
+
+      <div class="settings-tabs">
+        <button class="chip active" data-tab="mission">Missão</button>
+        <button class="chip" data-tab="autonomous">Modo autônomo</button>
+        <button class="chip" data-tab="general">Configurações gerais</button>
+      </div>
+
+      <section class="settings-section active" id="tab-mission">
+        <p class="muted">Documento lido primeiro pelos agentes.</p>
+        <pre id="mission-content" class="doc-pre">Carregando missão...</pre>
+      </section>
+
+      <section class="settings-section" id="tab-autonomous">
+        <label class="toggle-row">
+          <span>Ativar modo autônomo</span>
+          <input type="checkbox" id="autonomous-toggle" />
+        </label>
+        <p class="muted">Quando ativo, agentes executam automaticamente conforme suas atribuições.</p>
+        <p class="muted" id="autonomous-status"></p>
+      </section>
+
+      <section class="settings-section" id="tab-general">
+        <label class="field">
+          <span>Auto-refresh (segundos)</span>
+          <input type="number" id="refresh-seconds" min="5" step="5" value="15" />
+        </label>
+        <button class="chip active" id="save-general">Salvar configurações</button>
+      </section>
+    </aside>
+
+    <script src="./script.js?v=9"></script>
   </body>
 </html>
