@@ -771,6 +771,9 @@ async function autonomousTick() {
         const status = exec.status || 'failed';
         const needsUserAction = exec.needsUserAction || 'Defina melhor o escopo e critério de sucesso.';
         addLiveEvent('Execução real falhou', `${first.title} não teve efetividade real (${(exec.evidence || []).join(', ')}).`, true, { missionKey: first.cardId || makeCardId(first.title), missionTitle: first.title });
+        if (status === 'needs_clarification') {
+          addLiveEvent('Oráculo pediu contexto', exec.clarificationSent ? 'Pergunta enviada no WhatsApp do Monarca.' : 'Não consegui enviar pergunta no WhatsApp.', true, { missionKey: first.cardId || makeCardId(first.title), missionTitle: first.title });
+        }
 
         inProgress.items.shift();
         const target = status === 'needs_clarification'

@@ -9,6 +9,8 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent
 DATA_FILE = BASE / 'data.json'
 TRAIL_FILE = BASE / 'MISSOES_TRAJETO.md'
+MISSION_FILE = BASE / 'MISSAO.md'
+WHATSAPP_TARGETS = ['556699819658', '5566999819658']
 
 DEFAULT_DATA = {
     'agents': [],
@@ -28,11 +30,22 @@ DEFAULT_DATA = {
 }
 
 
+def mission_guard_prefix():
+    if not MISSION_FILE.exists():
+        return 'Siga estritamente MISSAO.md do dashboard.'
+    txt = MISSION_FILE.read_text(encoding='utf-8', errors='ignore')[:600]
+    return f"Siga estritamente esta missão do Reino antes de executar: {txt}"
+
+
 def dispatch_mission_to_openclaw(mission):
     title = mission.get('title', 'Missão sem título')
     desc = mission.get('desc', '')
     owner = mission.get('owner', 'Stark')
-    text = f"[MISSION CONTROL] Execução autônoma: {title} | Responsável: {owner}. Contexto: {desc}"
+    guard = mission_guard_prefix()
+    text = (
+        f"[MISSION CONTROL] Execução autônoma: {title} | Responsável: {owner}. "
+        f"Contexto: {desc}. {guard}"
+    )
     try:
         subprocess.Popen(
             ['openclaw', 'system', 'event', '--text', text, '--mode', 'now'],
@@ -42,6 +55,31 @@ def dispatch_mission_to_openclaw(mission):
         return True
     except Exception:
         return False
+
+
+def ask_whatsapp_clarification(mission, reason):
+    title = mission.get('title', 'Missão sem título')
+    desc = mission.get('desc', '')
+    msg = (
+        f"[Oráculo] Preciso de contexto para a missão '{title}'. "
+        f"Motivo: {reason}. Descrição atual: {desc}. "
+        f"Responda com: objetivo final, arquivo-alvo e critério de sucesso."
+    )
+    ok = False
+    for target in WHATSAPP_TARGETS:
+        try:
+            r = subprocess.run(
+                ['openclaw', 'message', 'send', '--channel', 'whatsapp', '--target', target, '--message', msg],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=20,
+            )
+            if r.returncode == 0:
+                ok = True
+                break
+        except Exception:
+            pass
+    return ok
 
 
 def load_data():
@@ -315,6 +353,11 @@ class Handler(SimpleHTTPRequestHandler):
             mission['executionStatus'] = status
             mission['needsUserAction'] = needs_user_action
 
+            clarification_sent = False
+            if status == 'needs_clarification' and not mission.get('clarificationAsked'):
+                clarification_sent = ask_whatsapp_clarification(mission, needs_user_action)
+                mission['clarificationAsked'] = clarification_sent
+
             if col is not None and idx is not None:
                 col['items'][idx] = mission
 
@@ -322,9 +365,22 @@ class Handler(SimpleHTTPRequestHandler):
             append_trail_entry(mission_id, mission.get('title', 'Missão sem título'), f"Execução ({kind}): {'OK' if ok else 'FALHOU'} | {'; '.join(evidence)}")
             if needs_user_action:
                 append_trail_entry(mission_id, mission.get('title', 'Missão sem título'), f"Ação necessária: {needs_user_action}")
+            if status == 'needs_clarification':
+                append_trail_entry(
+                    mission_id,
+                    mission.get('title', 'Missão sem título'),
+                    'Oráculo perguntou no WhatsApp o contexto faltante.' if clarification_sent else 'Falha ao enviar pergunta de clarificação no WhatsApp.'
+                )
 
             save_data(data)
-            return self._json(200, {'ok': ok, 'kind': kind, 'evidence': evidence, 'status': status, 'needsUserAction': needs_user_action})
+            return self._json(200, {
+                'ok': ok,
+                'kind': kind,
+                'evidence': evidence,
+                'status': status,
+                'needsUserAction': needs_user_action,
+                'clarificationSent': clarification_sent if status == 'needs_clarification' else False,
+            })
 
         if self.path == '/api/dashboard/state':
             payload = self._read_json()
