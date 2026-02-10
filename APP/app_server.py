@@ -163,6 +163,8 @@ def infer_mission_kind(title, desc):
     t = f"{title} {desc}".lower()
     if 'sitegpt' in t and ('remova' in t or 'remove' in t):
         return 'remove_sitegpt_badge'
+    if ('header' in t or 'mission control' in t) and any(k in t for k in ['icone', 'ícone', 'icon']):
+        return 'header_brand_icon'
     if 'header' in t and ('numero' in t or 'número' in t):
         return 'header_real_numbers'
     if 'chat' in t and 'agente' in t:
@@ -237,6 +239,10 @@ def apply_mission_effect(mission):
     title = mission.get('title', '')
     desc = mission.get('desc', '')
     kind = mission.get('kind') or infer_mission_kind(title, desc)
+    if kind == 'manual_required':
+        inferred = infer_mission_kind(title, desc)
+        if inferred != 'manual_required':
+            kind = inferred
 
     index_path = BASE / 'index.html'
     styles_path = BASE / 'styles.css'
@@ -251,6 +257,33 @@ def apply_mission_effect(mission):
             evidence.append('badge SiteGPT removida do header')
         else:
             evidence.append('badge SiteGPT já estava removida')
+
+    elif kind == 'header_brand_icon':
+        html = index_path.read_text(encoding='utf-8')
+        css = styles_path.read_text(encoding='utf-8') if styles_path.exists() else ''
+
+        changed = False
+        if '<h1>MISSION CONTROL</h1>' in html:
+            html = html.replace(
+                '<h1>MISSION CONTROL</h1>',
+                '<h1><span class="brand-icon" aria-hidden="true">🦞</span><span class="sr-only">MISSION CONTROL</span></h1>'
+            )
+            changed = True
+            evidence.append('header trocado de texto para ícone')
+        elif 'class="brand-icon"' in html:
+            evidence.append('ícone de marca já está aplicado no header')
+        else:
+            evidence.append('alvo do título do header não encontrado')
+            return False, kind, evidence
+
+        if '.brand-icon {' not in css:
+            css += "\n\n.brand-icon {\n  display: inline-block;\n  font-size: 18px;\n  line-height: 1;\n  filter: drop-shadow(0 0 8px rgba(126, 249, 207, 0.45));\n}\n\n.sr-only {\n  position: absolute;\n  width: 1px;\n  height: 1px;\n  padding: 0;\n  margin: -1px;\n  overflow: hidden;\n  clip: rect(0, 0, 0, 0);\n  white-space: nowrap;\n  border: 0;\n}\n"
+            styles_path.write_text(css, encoding='utf-8')
+            changed = True
+            evidence.append('estilo do ícone de marca aplicado')
+
+        if changed:
+            index_path.write_text(html, encoding='utf-8')
 
     elif kind == 'header_real_numbers':
         html = index_path.read_text(encoding='utf-8')
