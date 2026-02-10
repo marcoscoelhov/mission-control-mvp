@@ -21,6 +21,21 @@
       "name": "Done",
       "items": [
         {
+          "cardId": "card_header",
+          "title": "header",
+          "desc": "ative o botão chat entre agentes",
+          "owner": "Wanda",
+          "eta": "agora",
+          "impactRevenue": 3,
+          "impactAutonomy": 3,
+          "urgency": 3,
+          "approved": true,
+          "effective": true,
+          "needsEffectiveness": false,
+          "executionStatus": "effective",
+          "needsUserAction": ""
+        },
+        {
           "cardId": "card_ui",
           "title": "ui",
           "desc": "tela infinita",
@@ -103,7 +118,7 @@
   ],
   "feed": [],
   "missionIndex": {
-    "card_header": "m_2b12c1e170",
+    "card_header": "m_2e105cea5a",
     "card_chat": "m_11f6d3e7c8",
     "card_tela_infinita": "m_f8217dfa10",
     "card_ui": "m_da4dc300b5"

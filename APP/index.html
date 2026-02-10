@@ -129,6 +129,19 @@
           <span>Descrição</span>
           <textarea id="mission-desc" rows="5" placeholder="Contexto, objetivo e critérios de sucesso"></textarea>
         </label>
+        <label class="field">
+          <span>Tipo (kind)</span>
+          <select id="mission-kind">
+            <option value="dashboard_infinite_scroll">dashboard_infinite_scroll</option>
+            <option value="remove_sitegpt_badge">remove_sitegpt_badge</option>
+            <option value="header_real_numbers">header_real_numbers</option>
+            <option value="agent_chat_toggle">agent_chat_toggle</option>
+            <option value="manual_required">manual_required</option>
+          </select>
+        </label>
+        <label class="field"><span>Arquivo alvo</span><input type="text" id="mission-target" placeholder="APP/index.html ou APP/styles.css" /></label>
+        <label class="field"><span>Mudança esperada</span><input type="text" id="mission-expected" placeholder="ex.: body overflow:auto" /></label>
+        <label class="field"><span>Teste de aceite</span><input type="text" id="mission-acceptance" placeholder="ex.: rolagem vertical da página ativa" /></label>
         <div class="meta-grid">
           <label class="field"><span>💰 Receita (0-5)</span><input type="number" id="mission-revenue" min="0" max="5" value="3" /></label>
           <label class="field"><span>🤖 Autonomia (0-5)</span><input type="number" id="mission-autonomy" min="0" max="5" value="3" /></label>
@@ -183,6 +196,6 @@
       </section>
     </aside>
 
-    <script src="./script.js?v=27"></script>
+    <script src="./script.js?v=28"></script>
   </body>
 </html>

@@ -93,3 +93,20 @@ Este arquivo guarda o histórico completo de cada missão (um card por missão).
   - [2026-02-10 18:42:28 UTC] Efetividade real validada; liberada para seguir no fluxo.
   - [2026-02-10 18:42:33 UTC] Fluxo autônomo: in_progress → review (owner: Wanda).
   - [2026-02-10 18:42:38 UTC] Fluxo autônomo: review → done (owner: Wanda).
+
+## CARD m_2e105cea5a — header
+- Status: criado
+- Trajeto:
+  - [2026-02-10 18:55:25 UTC] Missão criada via Broadcast e enviada para Inbox.
+  - [2026-02-10 18:55:25 UTC] Confirmada no estado do board (Inbox).
+  - [2026-02-10 18:55:27 UTC] Aprovada por Jarvis.
+  - [2026-02-10 18:55:32 UTC] Fluxo autônomo: assigned → in_progress (owner: Wanda).
+  - [2026-02-10 18:55:32 UTC] Despacho real para OpenClaw enviado.
+
+## CARD card_header — header
+- Status: criado
+- Trajeto:
+  - [2026-02-10 18:55:37 UTC] Execução (agent_chat_toggle): OK | aba Chat já existe e está visível
+  - [2026-02-10 18:55:37 UTC] Efetividade real validada; liberada para seguir no fluxo.
+  - [2026-02-10 18:55:42 UTC] Fluxo autônomo: in_progress → review (owner: Wanda).
+  - [2026-02-10 18:55:47 UTC] Fluxo autônomo: review → done (owner: Wanda).

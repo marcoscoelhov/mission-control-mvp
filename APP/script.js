@@ -25,6 +25,10 @@ const closeBroadcastBtn = document.getElementById('close-broadcast');
 const sendBroadcastBtn = document.getElementById('send-broadcast');
 const missionTitleInput = document.getElementById('mission-title');
 const missionDescInput = document.getElementById('mission-desc');
+const missionKindInput = document.getElementById('mission-kind');
+const missionTargetInput = document.getElementById('mission-target');
+const missionExpectedInput = document.getElementById('mission-expected');
+const missionAcceptanceInput = document.getElementById('mission-acceptance');
 const missionRevenueInput = document.getElementById('mission-revenue');
 const missionAutonomyInput = document.getElementById('mission-autonomy');
 const missionUrgencyInput = document.getElementById('mission-urgency');
@@ -64,6 +68,7 @@ let selectedMissionKey = 'system';
 const normalizeColumnKey = (name = '') => name.toLowerCase().trim().replace(/\s+/g, '_');
 const prettyColumn = (key = '') => key.replaceAll('_', ' ').replace(/\b\w/g, (m) => m.toUpperCase());
 const makeCardId = (title = '') => `card_${title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')}`;
+const makeMissionId = () => `m_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 const escapeHtml = (s = '') => String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 
 function notify(msg) {
@@ -206,6 +211,10 @@ function normalizeCard(item) {
       approved: owner === 'Thanos' || owner === 'Wanda' || owner === 'Alfred',
       effective: false,
       needsEffectiveness: false,
+      kind: 'manual_required',
+      targetFile: '',
+      expectedChange: '',
+      acceptanceTest: '',
     };
   }
   return {
@@ -222,6 +231,10 @@ function normalizeCard(item) {
     needsEffectiveness: Boolean(item.needsEffectiveness),
     executionStatus: item.executionStatus || '',
     needsUserAction: item.needsUserAction || '',
+    kind: item.kind || 'manual_required',
+    targetFile: item.targetFile || '',
+    expectedChange: item.expectedChange || '',
+    acceptanceTest: item.acceptanceTest || '',
   };
 }
 
@@ -459,6 +472,10 @@ function serializeCard(card) {
     needsEffectiveness: card.dataset.needsEffectiveness === '1',
     executionStatus: card.dataset.executionStatus || '',
     needsUserAction: card.dataset.needsUserAction || '',
+    kind: card.dataset.kind || 'manual_required',
+    targetFile: card.dataset.targetFile || '',
+    expectedChange: card.dataset.expectedChange || '',
+    acceptanceTest: card.dataset.acceptanceTest || '',
   };
 }
 
@@ -480,6 +497,10 @@ function createCard(item) {
   card.dataset.needsEffectiveness = c.needsEffectiveness ? '1' : '0';
   card.dataset.executionStatus = c.executionStatus || '';
   card.dataset.needsUserAction = c.needsUserAction || '';
+  card.dataset.kind = c.kind || 'manual_required';
+  card.dataset.targetFile = c.targetFile || '';
+  card.dataset.expectedChange = c.expectedChange || '';
+  card.dataset.acceptanceTest = c.acceptanceTest || '';
 
   const score = priorityScore(c);
   const approveBtn = c.approved
@@ -856,10 +877,26 @@ function setupUI() {
       return;
     }
 
+    const kind = (missionKindInput.value || 'manual_required').trim();
+    const targetFile = missionTargetInput.value.trim();
+    const expectedChange = missionExpectedInput.value.trim();
+    const acceptanceTest = missionAcceptanceInput.value.trim();
+
+    if (!targetFile || !expectedChange || !acceptanceTest) {
+      showToast('Contrato obrigatório: arquivo alvo, mudança esperada e teste de aceite');
+      return;
+    }
+
+    const missionId = makeMissionId();
     const card = {
-      cardId: makeCardId(title),
+      id: missionId,
+      cardId: missionId,
       title,
       desc,
+      kind,
+      targetFile,
+      expectedChange,
+      acceptanceTest,
       owner: 'Stark',
       eta: missionEtaInput.value.trim() || 'agora',
       impactRevenue: Math.max(0, Math.min(5, Number(missionRevenueInput.value || 3))),
@@ -885,6 +922,9 @@ function setupUI() {
 
     missionTitleInput.value = '';
     missionDescInput.value = '';
+    missionTargetInput.value = '';
+    missionExpectedInput.value = '';
+    missionAcceptanceInput.value = '';
     broadcastDrawer.classList.remove('open');
   });
 

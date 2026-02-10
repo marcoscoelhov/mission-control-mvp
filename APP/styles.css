@@ -563,7 +563,8 @@ body {
 }
 
 .field input,
-.field textarea {
+.field textarea,
+.field select {
   border: 1px solid var(--border);
   background: rgba(255,255,255,0.03);
   color: #dce4f6;

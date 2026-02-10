@@ -181,12 +181,23 @@ def find_mission_ref(data, title=None, card_id=None):
     for c in cols:
         items = c.get('items', []) or []
         for i, m in enumerate(items):
-            mt = str(m.get('title', '')).strip().lower()
             mc = str(m.get('cardId', '')).strip().lower()
-            if card_id and mc and mc == str(card_id).strip().lower():
-                return c, i, m
-            if title and mt and mt == str(title).strip().lower():
-                return c, i, m
+            mid = str(m.get('id', '')).strip().lower()
+            if card_id:
+                needle = str(card_id).strip().lower()
+                if (mc and mc == needle) or (mid and mid == needle):
+                    return c, i, m
+    # fallback by title only if unique match
+    if title:
+        needle = str(title).strip().lower()
+        matches = []
+        for c in cols:
+            for i, m in enumerate(c.get('items', []) or []):
+                mt = str(m.get('title', '')).strip().lower()
+                if mt and mt == needle:
+                    matches.append((c, i, m))
+        if len(matches) == 1:
+            return matches[0]
     return None, None, None
 
 
@@ -229,6 +240,11 @@ class Handler(SimpleHTTPRequestHandler):
     def do_POST(self):
         if self.path == '/api/missions':
             payload = self._read_json()
+            required = ['kind', 'targetFile', 'expectedChange', 'acceptanceTest']
+            missing = [k for k in required if not str(payload.get(k, '')).strip()]
+            if missing:
+                return self._json(400, {'ok': False, 'error': 'missing_contract_fields', 'missing': missing})
+
             data = load_data()
             cols = data.get('columns', [])
             inbox = next((c for c in cols if c.get('name', '').lower() == 'inbox'), None)
@@ -237,17 +253,19 @@ class Handler(SimpleHTTPRequestHandler):
                 cols.insert(0, inbox)
                 data['columns'] = cols
 
+            mission_id = payload.get('id') or f"m_{uuid.uuid4().hex[:10]}"
             mission = {
                 **payload,
-                'id': payload.get('id') or f"m_{uuid.uuid4().hex[:10]}",
+                'id': mission_id,
+                'cardId': payload.get('cardId') or mission_id,
                 'createdAt': int(time.time() * 1000),
                 'executed': False,
             }
             inbox['items'] = [mission] + inbox.get('items', [])
 
             data.setdefault('missionIndex', {})
-            key = payload.get('cardId') or payload.get('title') or mission['id']
-            data['missionIndex'][str(key)] = mission['id']
+            data['missionIndex'][str(mission['id'])] = mission['id']
+            data['missionIndex'][str(mission['cardId'])] = mission['id']
 
             append_trail_entry(mission['id'], mission.get('title', 'Missão sem título'), 'Missão criada via Broadcast e enviada para Inbox.')
 
@@ -269,6 +287,8 @@ class Handler(SimpleHTTPRequestHandler):
             data = load_data()
             title = payload.get('title')
             card_id = payload.get('cardId')
+            if not card_id:
+                return self._json(400, {'ok': False, 'error': 'missing_card_id'})
             col, idx, mission = find_mission_ref(data, title=title, card_id=card_id)
             if mission is None:
                 return self._json(404, {'ok': False, 'error': 'mission_not_found'})
