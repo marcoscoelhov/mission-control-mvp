@@ -328,7 +328,18 @@ async function persistMove(payload) {
 }
 
 async function persistBroadcastMission(payload) {
-  return apiPost(API.missionBroadcast, payload);
+  try {
+    const res = await fetch(API.missionBroadcast, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) return { ok: false };
+    const data = await res.json();
+    return { ok: true, ...data };
+  } catch (_) {
+    return { ok: false };
+  }
 }
 
 async function persistBoardState(action, extra = {}) {
@@ -903,20 +914,26 @@ function setupUI() {
       acceptanceTest: '',
     };
 
-    const ok = await persistBroadcastMission(card);
-    if (STRICT_PERSISTENCE && !ok) {
+    const created = await persistBroadcastMission(card);
+    if (STRICT_PERSISTENCE && !created.ok) {
       showToast('Falha ao persistir missão no backend');
       return;
     }
 
-    addMissionToInbox(card);
-    const boardOk = await persistBoardState('broadcast_inbox', { title: card.title });
-    if (STRICT_PERSISTENCE && !boardOk) {
-      showToast('Falha ao persistir estado do board no backend');
-      return;
+    if (created.needsClarification) {
+      addLiveEvent('Oráculo pediu contexto', 'Missão ambígua: pergunta enviada no WhatsApp.', true, { missionKey: card.cardId, missionTitle: card.title });
+      showToast('Missão ficou em Needs Clarification (WhatsApp)');
+      const dashboard = await loadDashboard();
+      renderBoard(dashboard.columns || fallbackData.columns);
+    } else {
+      addMissionToInbox(card);
+      const boardOk = await persistBoardState('broadcast_inbox', { title: card.title, cardId: card.cardId });
+      if (STRICT_PERSISTENCE && !boardOk) {
+        showToast('Falha ao persistir estado do board no backend');
+        return;
+      }
+      addLiveEvent('Broadcast recebeu missão', `${card.title} entrou no Inbox para triagem do Stark.`, true, { missionKey: card.cardId || makeCardId(card.title), missionTitle: card.title });
     }
-
-    addLiveEvent('Broadcast recebeu missão', `${card.title} entrou no Inbox para triagem do Stark.`, true, { missionKey: card.cardId || makeCardId(card.title), missionTitle: card.title });
 
     missionTitleInput.value = '';
     missionDescInput.value = '';

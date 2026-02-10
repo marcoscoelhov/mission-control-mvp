@@ -123,3 +123,11 @@ Este arquivo guarda o histórico completo de cada missão (um card por missão).
   - [2026-02-10 19:36:11 UTC] Aprovada por Jarvis.
   - [2026-02-10 19:36:16 UTC] Fluxo autônomo: assigned → in_progress (owner: Wanda).
   - [2026-02-10 19:36:16 UTC] Despacho real para OpenClaw enviado.
+  - [2026-02-10 19:36:28 UTC] Execução (manual_required): FALHOU | missão exige execução manual/específica (kind não automatizado)
+  - [2026-02-10 19:36:28 UTC] Ação necessária: Missão ambígua. Defina escopo, arquivo-alvo e critério de sucesso.
+  - [2026-02-10 19:36:28 UTC] Oráculo perguntou no WhatsApp o contexto faltante.
+  - [2026-02-10 19:36:28 UTC] Alfred reabriu a missão para garantir efetividade real antes do Done final.
+  - [2026-02-10 19:36:32 UTC] Execução (manual_required): FALHOU | missão exige execução manual/específica (kind não automatizado)
+  - [2026-02-10 19:36:32 UTC] Ação necessária: Missão ambígua. Defina escopo, arquivo-alvo e critério de sucesso.
+  - [2026-02-10 19:36:32 UTC] Oráculo perguntou no WhatsApp o contexto faltante.
+  - [2026-02-10 19:36:32 UTC] Alfred reabriu a missão para garantir efetividade real antes do Done final.

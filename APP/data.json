@@ -11,27 +11,7 @@
     },
     {
       "name": "In Progress",
-      "items": [
-        {
-          "cardId": "m_1770752168837_ooq7s7",
-          "title": "ui/ux",
-          "desc": "ativar o botão chat no dashboard mission para os agentes conversagem entre si",
-          "owner": "Wanda",
-          "eta": "agora",
-          "impactRevenue": 5,
-          "impactAutonomy": 5,
-          "urgency": 5,
-          "approved": true,
-          "effective": false,
-          "needsEffectiveness": false,
-          "executionStatus": "",
-          "needsUserAction": "",
-          "kind": "manual_required",
-          "targetFile": "",
-          "expectedChange": "",
-          "acceptanceTest": ""
-        }
-      ]
+      "items": []
     },
     {
       "name": "Review",
@@ -132,6 +112,49 @@
           "approved": true,
           "effective": true,
           "needsEffectiveness": false
+        }
+      ]
+    },
+    {
+      "name": "Needs Clarification",
+      "items": [
+        {
+          "cardId": "m_1770752168837_ooq7s7",
+          "title": "ui/ux",
+          "desc": "ativar o botão chat no dashboard mission para os agentes conversagem entre si",
+          "owner": "Alfred",
+          "eta": "agora",
+          "impactRevenue": 5,
+          "impactAutonomy": 5,
+          "urgency": 5,
+          "approved": true,
+          "effective": false,
+          "needsEffectiveness": true,
+          "executionStatus": "needs_clarification",
+          "needsUserAction": "Missão ambígua. Defina escopo, arquivo-alvo e critério de sucesso.",
+          "kind": "manual_required",
+          "targetFile": "",
+          "expectedChange": "",
+          "acceptanceTest": ""
+        },
+        {
+          "cardId": "m_1770752168837_ooq7s7",
+          "title": "ui/ux",
+          "desc": "ativar o botão chat no dashboard mission para os agentes conversagem entre si",
+          "owner": "Alfred",
+          "eta": "agora",
+          "impactRevenue": 5,
+          "impactAutonomy": 5,
+          "urgency": 5,
+          "approved": true,
+          "effective": false,
+          "needsEffectiveness": true,
+          "executionStatus": "needs_clarification",
+          "needsUserAction": "Missão ambígua. Defina escopo, arquivo-alvo e critério de sucesso.",
+          "kind": "manual_required",
+          "targetFile": "",
+          "expectedChange": "",
+          "acceptanceTest": ""
         }
       ]
     }

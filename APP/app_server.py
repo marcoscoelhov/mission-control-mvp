@@ -137,6 +137,62 @@ def infer_mission_kind(title, desc):
     return 'manual_required'
 
 
+def triage_with_oraculo(title, desc, priority='p2'):
+    """Best-effort LLM triage via OpenClaw agent; falls back safely if unavailable."""
+    prompt = (
+        "Você é Oráculo do Mission Control. Analise a missão e retorne APENAS JSON com chaves: "
+        "kind, owner, confidence, needsClarification, missingContext, targetFile, expectedChange, acceptanceTest. "
+        "Sem texto extra. "
+        f"Missão: título='{title}', descrição='{desc}', prioridade='{priority}'."
+    )
+    try:
+        r = subprocess.run(
+            ['openclaw', 'agent', '--agent', 'stark', '--message', prompt, '--json', '--timeout', '45'],
+            capture_output=True,
+            text=True,
+            timeout=55,
+        )
+        raw = (r.stdout or '').strip()
+        if r.returncode == 0 and raw:
+            # Try parse direct JSON or JSON object embedded in output
+            try:
+                data = json.loads(raw)
+                txt = json.dumps(data, ensure_ascii=False)
+            except Exception:
+                txt = raw
+            start = txt.find('{')
+            end = txt.rfind('}')
+            if start >= 0 and end > start:
+                obj = json.loads(txt[start:end+1])
+                return {
+                    'kind': obj.get('kind') or infer_mission_kind(title, desc),
+                    'owner': obj.get('owner') or 'Oráculo',
+                    'confidence': float(obj.get('confidence', 0.6) or 0.6),
+                    'needsClarification': bool(obj.get('needsClarification', False)),
+                    'missingContext': obj.get('missingContext', ''),
+                    'targetFile': obj.get('targetFile', ''),
+                    'expectedChange': obj.get('expectedChange', ''),
+                    'acceptanceTest': obj.get('acceptanceTest', ''),
+                    'source': 'llm',
+                }
+    except Exception:
+        pass
+
+    # Fallback (only when LLM not reachable)
+    kind = infer_mission_kind(title, desc)
+    return {
+        'kind': kind,
+        'owner': 'Oráculo' if kind == 'manual_required' else ('Wanda' if 'ui' in kind or 'scroll' in kind else 'Alfred'),
+        'confidence': 0.45,
+        'needsClarification': kind == 'manual_required',
+        'missingContext': 'Objetivo final, arquivo-alvo e critério de sucesso',
+        'targetFile': '',
+        'expectedChange': '',
+        'acceptanceTest': '',
+        'source': 'fallback',
+    }
+
+
 def apply_mission_effect(mission):
     title = mission.get('title', '')
     desc = mission.get('desc', '')
@@ -290,29 +346,48 @@ class Handler(SimpleHTTPRequestHandler):
             mission_id = payload.get('id') or f"m_{uuid.uuid4().hex[:10]}"
             title = payload.get('title', 'Missão sem título')
             desc = payload.get('desc', '')
-            kind = payload.get('kind') or infer_mission_kind(title, desc)
+            priority = payload.get('priority', 'p2')
+            triage = triage_with_oraculo(title, desc, priority)
 
             mission = {
                 **payload,
                 'id': mission_id,
                 'cardId': payload.get('cardId') or mission_id,
-                'kind': kind,
-                'targetFile': payload.get('targetFile', ''),
-                'expectedChange': payload.get('expectedChange', ''),
-                'acceptanceTest': payload.get('acceptanceTest', ''),
+                'kind': triage.get('kind') or infer_mission_kind(title, desc),
+                'owner': triage.get('owner') or payload.get('owner', 'Oráculo'),
+                'confidence': triage.get('confidence', 0.5),
+                'needsClarification': triage.get('needsClarification', False),
+                'missingContext': triage.get('missingContext', ''),
+                'targetFile': triage.get('targetFile') or payload.get('targetFile', ''),
+                'expectedChange': triage.get('expectedChange') or payload.get('expectedChange', ''),
+                'acceptanceTest': triage.get('acceptanceTest') or payload.get('acceptanceTest', ''),
+                'triageSource': triage.get('source', 'fallback'),
                 'createdAt': int(time.time() * 1000),
                 'executed': False,
             }
-            inbox['items'] = [mission] + inbox.get('items', [])
+            # If Oráculo needs clarification, route immediately to clarification lane and ask once on WhatsApp
+            if mission.get('needsClarification'):
+                inbox['items'] = [m for m in inbox.get('items', []) if str(m.get('id')) != mission['id']]
+                clar = next((c for c in cols if c.get('name', '').lower() == 'needs clarification'), None)
+                if clar is None:
+                    clar = {'name': 'Needs Clarification', 'items': []}
+                    cols.append(clar)
+                sent = ask_whatsapp_clarification(mission, mission.get('missingContext') or 'Contexto insuficiente')
+                mission['clarificationAsked'] = sent
+                mission['executionStatus'] = 'needs_clarification'
+                mission['needsUserAction'] = mission.get('missingContext') or 'Responder contexto no WhatsApp.'
+                clar['items'] = [mission] + clar.get('items', [])
+                append_trail_entry(mission['id'], mission.get('title', 'Missão sem título'), 'Oráculo classificou como ambígua e pediu contexto no WhatsApp.')
+            else:
+                inbox['items'] = [mission] + inbox.get('items', [])
+                append_trail_entry(mission['id'], mission.get('title', 'Missão sem título'), 'Missão criada via Broadcast e enviada para Inbox.')
 
             data.setdefault('missionIndex', {})
             data['missionIndex'][str(mission['id'])] = mission['id']
             data['missionIndex'][str(mission['cardId'])] = mission['id']
 
-            append_trail_entry(mission['id'], mission.get('title', 'Missão sem título'), 'Missão criada via Broadcast e enviada para Inbox.')
-
             dispatched = False
-            if data.get('autonomous'):
+            if data.get('autonomous') and not mission.get('needsClarification'):
                 dispatched = dispatch_mission_to_openclaw(mission)
                 mission['executed'] = dispatched
                 append_trail_entry(
@@ -322,7 +397,13 @@ class Handler(SimpleHTTPRequestHandler):
                 )
 
             save_data(data)
-            return self._json(200, {'ok': True, 'missionId': mission['id'], 'dispatched': dispatched})
+            return self._json(200, {
+                'ok': True,
+                'missionId': mission['id'],
+                'dispatched': dispatched,
+                'needsClarification': bool(mission.get('needsClarification')),
+                'triageSource': mission.get('triageSource', 'fallback'),
+            })
 
         if self.path == '/api/missions/execute':
             payload = self._read_json()
