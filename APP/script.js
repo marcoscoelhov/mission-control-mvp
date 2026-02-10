@@ -4,13 +4,6 @@ const fallbackData = {
     ['📈', 'Fury', 'Customer Research'],
     ['🌱', 'Groot', 'Retention Specialist'],
     ['🏹', 'Hawkeye', 'Outbound Scout'],
-    ['🧠', 'Jarvis', 'Squad Lead'],
-    ['✍️', 'Loki', 'Content Writer'],
-    ['📮', 'Pepper', 'Email Marketing'],
-    ['📱', 'Quill', 'Social Media'],
-    ['🔍', 'Rob', 'Strategic Advisor'],
-    ['📊', 'Shuri', 'Product Analyst'],
-    ['👁️', 'Vision', 'SERP Monitor'],
   ],
   columns: [
     {
@@ -32,54 +25,31 @@ const fallbackData = {
       items: [
         ['Listicle Outreach Campaign - 5 Targets', 'Execute outreach to high-priority AI chatbot sites.', 'Hawkeye', '2d'],
         ['Zendesk Marketplace Integration', 'Ship integration docs and release notes.', 'Jarvis', '1d'],
-        ['Indie Hackers Database', 'Map competitor backlinks for opportunity list.', 'Vision', '2h'],
       ],
     },
     {
       name: 'Review',
-      items: [
-        ['SiteGPT Hero Video Production', 'Produce 30-45 second hero clip.', 'Wanda', '3d'],
-        ['Competitor Pricing Research', 'Complete pricing matrix and summary.', 'Fury', '6h'],
-      ],
+      items: [['SiteGPT Hero Video Production', 'Produce 30-45 second hero clip.', 'Wanda', '3d']],
     },
     {
       name: 'Done',
-      items: [
-        ['Shopify Blog Landing Page', 'Landing page copy and metadata finalized.', 'Loki', '2d'],
-        ['Product Demo Video Script', 'Script completed and approved.', 'Shuri', '2d'],
-        ['Tweet Content - Real Stories', 'Batch of social posts scheduled.', 'Quill', '20m'],
-      ],
+      items: [['Shopify Blog Landing Page', 'Landing page copy and metadata finalized.', 'Loki', '2d']],
     },
-  ],
-  feed: [
-    ['@Vision completed SERP Feature Audit', 'Rich snippet opportunities mapped and tagged.'],
-    ['SERP Feature Audit moved to done', 'All high-priority pages exported to board.'],
-    ['@Fury comentou em Customer Interview', 'Ajustar roteiro para churned segment.'],
-    ['@Hawkeye iniciou Listicle Outreach', '5 novos domínios adicionados ao plano.'],
-    ['@Shuri pediu revisão de pricing brief', 'Comparativo com 8 concorrentes.'],
   ],
 };
 
 const agentsList = document.getElementById('agents-list');
 const kanban = document.getElementById('kanban');
-const liveFeed = document.getElementById('live-feed');
 const livePanel = document.getElementById('live-panel');
 const toggleLive = document.getElementById('toggle-live');
 const workspace = document.querySelector('.workspace');
+const agentDetails = document.getElementById('agent-details');
+const countEl = document.querySelector('.agents-panel .count');
 
 let draggedCard = null;
+let currentAgents = [];
 
-const normalizeData = (raw) => ({
-  agents: Array.isArray(raw?.agents) ? raw.agents : fallbackData.agents,
-  columns: Array.isArray(raw?.columns) ? raw.columns : fallbackData.columns,
-  feed: Array.isArray(raw?.feed) ? raw.feed : fallbackData.feed,
-});
-
-const normalizeColumnKey = (name = '') =>
-  name
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, '_');
+const normalizeColumnKey = (name = '') => name.toLowerCase().trim().replace(/\s+/g, '_');
 
 const makeCardId = (title = '') =>
   `card_${title
@@ -89,55 +59,71 @@ const makeCardId = (title = '') =>
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '')}`;
 
-function normalizeAgent(agent) {
+const escapeHtml = (s = '') =>
+  String(s)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
+
+const normalizeAgent = (agent) => {
   if (Array.isArray(agent)) {
     const [icon, name, role] = agent;
-    return { icon, name, role, status: 'working' };
+    return { id: (name || '').toLowerCase(), icon, name, role, status: 'working', model: 'n/a', soul: '', memory: '' };
   }
 
   return {
+    id: agent?.id || (agent?.name || 'agent').toLowerCase(),
     icon: agent?.icon || '🤖',
     name: agent?.name || 'Agent',
     role: agent?.role || 'OpenClaw Agent',
     status: agent?.status || 'online',
+    model: agent?.model || 'unknown',
+    soul: agent?.soul || '',
+    memory: agent?.memory || '',
+    identity: agent?.identity || '',
   };
+};
+
+async function fetchJson(url) {
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) throw new Error('fetch failed');
+  return res.json();
 }
 
-async function loadData() {
-  const endpoints = ['/api/dashboard', './data.json'];
+async function loadDashboard() {
+  try {
+    const d = await fetchJson('/api/dashboard');
+    if (Array.isArray(d?.columns)) return d;
+  } catch (_) {}
 
-  for (const url of endpoints) {
-    try {
-      const res = await fetch(url, { cache: 'no-store' });
-      if (!res.ok) continue;
-      const json = await res.json();
-      return normalizeData(json);
-    } catch (_) {}
+  try {
+    return await fetchJson('./data.json');
+  } catch (_) {
+    return fallbackData;
   }
-
-  return fallbackData;
 }
 
-async function loadOpenClawAgents() {
-  const endpoints = ['/api/openclaw/agents', './openclaw-agents.json'];
+async function loadAgentsDetails() {
+  try {
+    const d = await fetchJson('/api/openclaw/agents/details');
+    if (Array.isArray(d?.agents)) return d.agents.map(normalizeAgent);
+  } catch (_) {}
 
-  for (const url of endpoints) {
-    try {
-      const res = await fetch(url, { cache: 'no-store' });
-      if (!res.ok) continue;
-      const json = await res.json();
-      if (Array.isArray(json?.agents) && json.agents.length > 0) {
-        return json.agents.map(normalizeAgent);
-      }
-    } catch (_) {}
-  }
+  try {
+    const d = await fetchJson('./openclaw-agents-details.json');
+    if (Array.isArray(d?.agents)) return d.agents.map(normalizeAgent);
+  } catch (_) {}
 
-  return null;
+  try {
+    const d = await fetchJson('/api/openclaw/agents');
+    if (Array.isArray(d?.agents)) return d.agents.map(normalizeAgent);
+  } catch (_) {}
+
+  return fallbackData.agents.map(normalizeAgent);
 }
 
 async function persistMove(payload) {
   const endpoints = ['/api/dashboard/move', '/api/cards/move', '/api/card/move'];
-
   for (const url of endpoints) {
     try {
       const res = await fetch(url, {
@@ -148,25 +134,94 @@ async function persistMove(payload) {
       if (res.ok) return true;
     } catch (_) {}
   }
-
   return false;
+}
+
+function renderAgentDetails(agent) {
+  if (!agent) return;
+
+  const soul = agent.soul || 'SOUL.md não encontrado para este agente.';
+  const memory = agent.memory || 'MEMORY.md não encontrado para este agente.';
+
+  agentDetails.innerHTML = `
+    <div class="detail-head">
+      <div class="agent-icon lg">${escapeHtml(agent.icon)}</div>
+      <div>
+        <h3>${escapeHtml(agent.name)}</h3>
+        <p class="muted">${escapeHtml(agent.role)} • ${escapeHtml(agent.status)}</p>
+      </div>
+    </div>
+
+    <div class="meta-grid">
+      <div class="meta-item">
+        <span>Modelo</span>
+        <strong>${escapeHtml(agent.model || 'unknown')}</strong>
+      </div>
+      <div class="meta-item">
+        <span>Agent ID</span>
+        <strong>${escapeHtml(agent.id || '-')}</strong>
+      </div>
+    </div>
+
+    <div class="doc-block">
+      <h4>SOUL.md</h4>
+      <pre>${escapeHtml(soul)}</pre>
+    </div>
+
+    <div class="doc-block">
+      <h4>MEMORY.md</h4>
+      <pre>${escapeHtml(memory)}</pre>
+    </div>
+  `;
+}
+
+function renderAgents(agents) {
+  currentAgents = agents;
+  agentsList.innerHTML = '';
+  if (countEl) countEl.textContent = String(agents.length);
+
+  agents.forEach((agent, index) => {
+    const item = document.createElement('article');
+    item.className = `agent-item ${index === 0 ? 'active' : ''}`;
+    item.innerHTML = `
+      <div class="agent-icon">${escapeHtml(agent.icon)}</div>
+      <div class="agent-main">
+        <strong>${escapeHtml(agent.name)}</strong>
+        <span>${escapeHtml(agent.role)}</span>
+      </div>
+      <div class="status">${escapeHtml(agent.status)}</div>
+    `;
+
+    item.addEventListener('click', () => {
+      document.querySelectorAll('.agent-item.active').forEach((el) => el.classList.remove('active'));
+      item.classList.add('active');
+      renderAgentDetails(agent);
+
+      if (livePanel.classList.contains('collapsed')) {
+        livePanel.classList.remove('collapsed');
+        workspace.classList.remove('live-collapsed');
+      }
+    });
+
+    agentsList.appendChild(item);
+  });
+
+  renderAgentDetails(agents[0]);
 }
 
 function createCard([title, desc, owner, eta]) {
   const card = document.createElement('article');
   card.className = 'card';
   card.draggable = true;
-
-  const cardId = makeCardId(title);
-  card.dataset.cardId = cardId;
+  card.dataset.cardId = makeCardId(title);
   card.dataset.title = title;
 
   card.innerHTML = `
-    <h3>${title}</h3>
-    <p>${desc}</p>
+    <h3>${escapeHtml(title)}</h3>
+    <p>${escapeHtml(desc)}</p>
     <div class="card-foot">
-      <span>${owner}</span>
-      <span>${eta} ago</span>
+      <span>${escapeHtml(owner)}</span>
+      <span>${escapeHtml(eta)} ago</span>
     </div>
   `;
 
@@ -184,20 +239,11 @@ function createCard([title, desc, owner, eta]) {
   return card;
 }
 
-function renderAgents(agents) {
-  agentsList.innerHTML = '';
-  agents.map(normalizeAgent).forEach(({ icon, name, role, status }) => {
-    const item = document.createElement('article');
-    item.className = 'agent-item';
-    item.innerHTML = `
-      <div class="agent-icon">${icon}</div>
-      <div class="agent-main">
-        <strong>${name}</strong>
-        <span>${role}</span>
-      </div>
-      <div class="status">${status}</div>
-    `;
-    agentsList.appendChild(item);
+function updateAllCounts() {
+  document.querySelectorAll('.column').forEach((column) => {
+    const total = column.querySelectorAll('.card').length;
+    const el = column.querySelector('.column-head span:last-child');
+    if (el) el.textContent = String(total);
   });
 }
 
@@ -207,9 +253,7 @@ function renderBoard(columns) {
   columns.forEach((col) => {
     const column = document.createElement('section');
     column.className = 'column';
-
-    const columnKey = normalizeColumnKey(col.name);
-    column.dataset.column = columnKey;
+    column.dataset.column = normalizeColumnKey(col.name);
 
     const cards = document.createElement('div');
     cards.className = 'cards';
@@ -218,7 +262,6 @@ function renderBoard(columns) {
       e.preventDefault();
       cards.classList.add('drag-over');
     });
-
     cards.addEventListener('dragleave', () => cards.classList.remove('drag-over'));
 
     cards.addEventListener('drop', async (e) => {
@@ -226,10 +269,8 @@ function renderBoard(columns) {
       cards.classList.remove('drag-over');
       if (!draggedCard) return;
 
-      const fromColumnEl = draggedCard.closest('.column');
-      const fromColumn = fromColumnEl?.dataset.column || null;
+      const fromColumn = draggedCard.closest('.column')?.dataset.column || null;
       const toColumn = column.dataset.column;
-
       const siblings = [...cards.querySelectorAll('.card:not(.dragging)')];
       const next = siblings.find((s) => e.clientY <= s.getBoundingClientRect().top + s.offsetHeight / 2);
       if (next) cards.insertBefore(draggedCard, next);
@@ -238,23 +279,21 @@ function renderBoard(columns) {
       const toIndex = [...cards.querySelectorAll('.card')].indexOf(draggedCard);
       updateAllCounts();
 
-      const ok = await persistMove({
+      await persistMove({
         cardId: draggedCard.dataset.cardId,
         title: draggedCard.dataset.title,
         fromColumn,
         toColumn,
         toIndex,
       });
-
-      if (!ok) console.warn('Não foi possível persistir movimento no backend (UI local mantida).');
     });
 
-    col.items.forEach((item) => cards.appendChild(createCard(item)));
+    (col.items || []).forEach((item) => cards.appendChild(createCard(item)));
 
     column.innerHTML = `
       <header class="column-head">
-        <span>${col.name}</span>
-        <span>${col.items.length}</span>
+        <span>${escapeHtml(col.name)}</span>
+        <span>${(col.items || []).length}</span>
       </header>
     `;
 
@@ -263,42 +302,20 @@ function renderBoard(columns) {
   });
 }
 
-function renderFeed(feed) {
-  liveFeed.innerHTML = '';
-  feed.forEach(([title, message]) => {
-    const item = document.createElement('article');
-    item.className = 'feed-item';
-    item.innerHTML = `<strong>${title}</strong><p>${message}</p>`;
-    liveFeed.appendChild(item);
-  });
-}
-
-function updateAllCounts() {
-  document.querySelectorAll('.column').forEach((column) => {
-    const total = column.querySelectorAll('.card').length;
-    const countEl = column.querySelector('.column-head span:last-child');
-    if (countEl) countEl.textContent = String(total);
-  });
-}
-
 function setupUI() {
   workspace.classList.add('live-collapsed');
-
   toggleLive.addEventListener('click', () => {
     const isCollapsed = livePanel.classList.toggle('collapsed');
     workspace.classList.toggle('live-collapsed', isCollapsed);
-    toggleLive.setAttribute('aria-label', isCollapsed ? 'Expandir Live' : 'Colapsar Live');
+    toggleLive.setAttribute('aria-label', isCollapsed ? 'Expandir painel' : 'Colapsar painel');
   });
 }
 
 async function init() {
   setupUI();
-  const data = await loadData();
-  const openclawAgents = await loadOpenClawAgents();
-
-  renderAgents(openclawAgents || data.agents);
-  renderBoard(data.columns);
-  renderFeed(data.feed);
+  const [dashboard, agents] = await Promise.all([loadDashboard(), loadAgentsDetails()]);
+  renderBoard(dashboard.columns || fallbackData.columns);
+  renderAgents(agents);
 }
 
 init();
