@@ -197,6 +197,20 @@ async function loadAgentsDetails() {
   return [];
 }
 
+async function checkBackendConnection() {
+  let ok = false;
+  for (const url of ['/api/ping', '/api/health', '/healthz']) {
+    try {
+      const res = await fetch(url, { method: 'GET', cache: 'no-store' });
+      if (res.ok) {
+        ok = true;
+        break;
+      }
+    } catch (_) {}
+  }
+  addLiveEvent('Backend', ok ? 'Conectado e respondendo persistência' : 'Sem resposta de saúde (persistência pode falhar)');
+}
+
 async function loadMission() {
   for (const url of ['/api/mission.md', './MISSAO.md']) {
     try {
@@ -207,18 +221,19 @@ async function loadMission() {
   missionContent.textContent = 'Missão não encontrada.';
 }
 
-async function persistMove(payload) {
-  for (const url of ['/api/dashboard/move', '/api/cards/move', '/api/card/move']) {
-    try {
-      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-      if (res.ok) return true;
-    } catch (_) {}
-  }
-  return false;
+const STRICT_PERSISTENCE = true;
+
+function snapshotBoard() {
+  return JSON.parse(JSON.stringify(boardState));
 }
 
-async function persistBroadcastMission(payload) {
-  for (const url of ['/api/missions/broadcast', '/api/mission/broadcast', '/api/missions']) {
+function restoreBoard(snapshot) {
+  boardState = snapshot;
+  renderBoard(boardState);
+}
+
+async function apiPost(urls, payload) {
+  for (const url of urls) {
     try {
       const res = await fetch(url, {
         method: 'POST',
@@ -229,6 +244,18 @@ async function persistBroadcastMission(payload) {
     } catch (_) {}
   }
   return false;
+}
+
+async function persistMove(payload) {
+  return apiPost(['/api/dashboard/move', '/api/cards/move', '/api/card/move'], payload);
+}
+
+async function persistBroadcastMission(payload) {
+  return apiPost(['/api/missions/broadcast', '/api/mission/broadcast', '/api/missions'], payload);
+}
+
+async function persistBoardState(action, extra = {}) {
+  return apiPost(['/api/dashboard/state', '/api/board/state'], { action, board: boardState, ...extra });
 }
 
 function refreshInboxChip() {
@@ -250,11 +277,9 @@ async function saveAutonomousMode(enabled) {
   setAutonomousVisuals(enabled);
   addLiveEvent('Modo autônomo', enabled ? 'Ativado' : 'Desativado', true);
   if (enabled) autonomousTick();
-  for (const req of [{ url: '/api/autonomous/mode', body: { enabled } }, { url: '/api/reinado/ajustes', body: { auto_exec_enabled: enabled } }]) {
-    try {
-      const res = await fetch(req.url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req.body) });
-      if (res.ok) return;
-    } catch (_) {}
+  const ok = await apiPost(['/api/autonomous/mode', '/api/reinado/ajustes'], { enabled, auto_exec_enabled: enabled });
+  if (STRICT_PERSISTENCE && !ok) {
+    showToast('Falha ao persistir modo autônomo no backend');
   }
 }
 
@@ -385,11 +410,18 @@ function createCard(item) {
     <div class="approve-row">${approveBtn}</div>
   `;
 
-  card.querySelector('[data-action="approve"]')?.addEventListener('click', (e) => {
+  card.querySelector('[data-action="approve"]')?.addEventListener('click', async (e) => {
     e.stopPropagation();
+    const before = snapshotBoard();
     card.dataset.approved = '1';
     const row = card.querySelector('.approve-row');
     if (row) row.innerHTML = `<span class="chip mini approved">Aprovado</span>`;
+    const ok = await persistBoardState('approve', { cardId: card.dataset.cardId });
+    if (STRICT_PERSISTENCE && !ok) {
+      showToast('Falha ao persistir aprovação no backend');
+      restoreBoard(before);
+      return;
+    }
     addLiveEvent('Jarvis aprovou missão', card.dataset.title || 'Missão sem título', true);
   });
 
@@ -459,6 +491,7 @@ function renderBoard(columns) {
       cards.classList.remove('drag-over');
       if (!draggedCard) return;
 
+      const before = snapshotBoard();
       const fromColumn = draggedCard.closest('.column')?.dataset.column || null;
       const toColumn = column.dataset.column;
 
@@ -480,7 +513,13 @@ function renderBoard(columns) {
 
       const toIndex = [...cards.querySelectorAll('.card')].indexOf(draggedCard);
       updateAllCounts();
-      await persistMove({ cardId: draggedCard.dataset.cardId, title: draggedCard.dataset.title, fromColumn, toColumn, toIndex });
+      const okMove = await persistMove({ cardId: draggedCard.dataset.cardId, title: draggedCard.dataset.title, fromColumn, toColumn, toIndex });
+      const okBoard = await persistBoardState('move', { cardId: draggedCard.dataset.cardId, fromColumn, toColumn, toIndex });
+      if (STRICT_PERSISTENCE && (!okMove || !okBoard)) {
+        showToast('Falha ao persistir movimentação no backend');
+        restoreBoard(before);
+        return;
+      }
       addLiveEvent('Movimentação de missão', `${draggedCard.dataset.title || 'Missão'}: ${prettyColumn(fromColumn || 'desconhecido')} → ${prettyColumn(toColumn || 'desconhecido')}`, true);
     });
 
@@ -494,7 +533,7 @@ function getColumn(key) {
   return boardState.find((c) => normalizeColumnKey(c.name) === key);
 }
 
-function autoDelegateInbox(silent = false) {
+async function autoDelegateInbox(silent = false) {
   const assignedCol = getColumn('assigned');
   if (!assignedCol) return;
 
@@ -504,6 +543,7 @@ function autoDelegateInbox(silent = false) {
     return;
   }
 
+  const before = snapshotBoard();
   const delegated = inboxMissions.map((m) => ({
     ...normalizeCard(m),
     owner: inferOwner(`${m.title} ${m.desc}`),
@@ -515,28 +555,44 @@ function autoDelegateInbox(silent = false) {
   if (inboxCol) inboxCol.items = [];
 
   renderBoard(boardState);
+  const ok = await persistBoardState('auto_delegate', { count: total });
+  if (STRICT_PERSISTENCE && !ok) {
+    showToast('Falha ao persistir auto-delegação no backend');
+    restoreBoard(before);
+    return;
+  }
+
   if (!silent) notify(`Auto-delegação concluída: ${total} missão(ões).`);
   addLiveEvent('Stark auto-delegou inbox', `${total} missão(ões) encaminhadas para Assigned.`, true);
 }
 
-function moveOneMission(fromKey, toKey, transform = (x) => x) {
+async function moveOneMission(fromKey, toKey, transform = (x) => x) {
   const from = getColumn(fromKey);
   const to = getColumn(toKey);
   if (!from || !to || !(from.items || []).length) return false;
 
+  const before = snapshotBoard();
   const item = normalizeCard(from.items.shift());
   to.items.unshift(transform(item));
   renderBoard(boardState);
+
+  const ok = await persistBoardState('autonomous_move', { title: item.title, from: fromKey, to: toKey });
+  if (STRICT_PERSISTENCE && !ok) {
+    showToast('Falha ao persistir fluxo autônomo no backend');
+    restoreBoard(before);
+    return false;
+  }
+
   addLiveEvent('Fluxo autônomo', `${item.title}: ${prettyColumn(fromKey)} → ${prettyColumn(toKey)}`, true);
   return true;
 }
 
-function autonomousTick() {
+async function autonomousTick() {
   const autonomousOn = localStorage.getItem('mc_autonomous') === '1';
   if (!autonomousOn) return;
 
   if (inboxMissions.length) {
-    autoDelegateInbox(true);
+    await autoDelegateInbox(true);
     return;
   }
 
@@ -544,16 +600,23 @@ function autonomousTick() {
   if (assigned?.items?.length) {
     const first = normalizeCard(assigned.items[0]);
     if (!first.approved) {
+      const before = snapshotBoard();
       assigned.items[0] = { ...first, approved: true };
       renderBoard(boardState);
+      const ok = await persistBoardState('autonomous_approve', { title: first.title });
+      if (STRICT_PERSISTENCE && !ok) {
+        showToast('Falha ao persistir aprovação automática no backend');
+        restoreBoard(before);
+        return;
+      }
       addLiveEvent('Jarvis aprovou missão', first.title, true);
       return;
     }
-    if (moveOneMission('assigned', 'in_progress')) return;
+    if (await moveOneMission('assigned', 'in_progress')) return;
   }
 
-  if (moveOneMission('in_progress', 'review')) return;
-  moveOneMission('review', 'done');
+  if (await moveOneMission('in_progress', 'review')) return;
+  await moveOneMission('review', 'done');
 }
 
 function startAutonomyLoop() {
@@ -594,7 +657,7 @@ function setupUI() {
     setLiveTab(btn.dataset.liveTab);
   });
 
-  autoDelegateBtn?.addEventListener('click', autoDelegateInbox);
+  autoDelegateBtn?.addEventListener('click', () => autoDelegateInbox());
   inboxChip?.addEventListener('click', () => {
     broadcastDrawer.classList.add('open');
     settingsDrawer.classList.remove('open');
@@ -625,8 +688,19 @@ function setupUI() {
       approved: false,
     };
 
+    const ok = await persistBroadcastMission(card);
+    if (STRICT_PERSISTENCE && !ok) {
+      showToast('Falha ao persistir missão no backend');
+      return;
+    }
+
     addMissionToInbox(card);
-    await persistBroadcastMission(card);
+    const boardOk = await persistBoardState('broadcast_inbox', { title: card.title });
+    if (STRICT_PERSISTENCE && !boardOk) {
+      showToast('Falha ao persistir estado do board no backend');
+      return;
+    }
+
     addLiveEvent('Broadcast recebeu missão', `${card.title} entrou no Inbox para triagem do Stark.`, true);
 
     missionTitleInput.value = '';
@@ -660,6 +734,7 @@ async function init() {
   setupUI();
   renderLiveFeed();
   setLiveTab('history');
+  await checkBackendConnection();
   const [dashboard, agents] = await Promise.all([loadDashboard(), loadAgentsDetails(), loadMission()]);
   renderBoard(dashboard.columns || fallbackData.columns);
   if (agents.length) renderAgents(agents);
