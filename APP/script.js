@@ -39,6 +39,8 @@ const autonomousToggle = document.getElementById('autonomous-toggle');
 const autonomousStatus = document.getElementById('autonomous-status');
 const refreshSecondsInput = document.getElementById('refresh-seconds');
 const saveGeneralBtn = document.getElementById('save-general');
+const toastWrap = document.getElementById('toast-wrap');
+const throughputValue = document.getElementById('throughput-value');
 
 let draggedCard = null;
 let selectedAgentId = null;
@@ -48,6 +50,7 @@ let refreshMs = Number(localStorage.getItem('mc_refresh_ms') || 15000);
 let boardState = fallbackData.columns.map((c) => ({ name: c.name, items: [...(c.items || [])] }));
 let inboxMissions = [];
 let activityLog = [];
+let executionsWindow = [];
 
 const normalizeColumnKey = (name = '') => name.toLowerCase().trim().replace(/\s+/g, '_');
 const prettyColumn = (key = '') => key.replaceAll('_', ' ').replace(/\b\w/g, (m) => m.toUpperCase());
@@ -56,6 +59,29 @@ const escapeHtml = (s = '') => String(s).replaceAll('&', '&amp;').replaceAll('<'
 
 function notify(msg) {
   console.log(msg);
+}
+
+function showToast(text) {
+  if (!toastWrap) return;
+  const t = document.createElement('div');
+  t.className = 'toast';
+  t.textContent = text;
+  toastWrap.prepend(t);
+  setTimeout(() => t.remove(), 2600);
+}
+
+function bumpThroughput() {
+  const now = Date.now();
+  executionsWindow.push(now);
+  executionsWindow = executionsWindow.filter((x) => now - x <= 60000);
+  if (throughputValue) throughputValue.textContent = String(executionsWindow.length);
+}
+
+function pulseFlow() {
+  kanban.classList.remove('flow-active');
+  void kanban.offsetWidth;
+  kanban.classList.add('flow-active');
+  setTimeout(() => kanban.classList.remove('flow-active'), 1300);
 }
 
 function renderLiveFeed() {
@@ -77,11 +103,16 @@ function renderLiveFeed() {
   });
 }
 
-function addLiveEvent(title, message) {
+function addLiveEvent(title, message, emphasize = false) {
   const time = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   activityLog.unshift({ title, message: `${message} • ${time}` });
   activityLog = activityLog.slice(0, 80);
   renderLiveFeed();
+  if (emphasize) {
+    showToast(`${title}: ${message}`);
+    pulseFlow();
+    bumpThroughput();
+  }
 }
 
 function setAutonomousVisuals(enabled) {
@@ -217,7 +248,7 @@ async function saveAutonomousMode(enabled) {
   localStorage.setItem('mc_autonomous', enabled ? '1' : '0');
   autonomousStatus.textContent = enabled ? 'Modo autônomo ativado.' : 'Modo autônomo desativado.';
   setAutonomousVisuals(enabled);
-  addLiveEvent('Modo autônomo', enabled ? 'Ativado' : 'Desativado');
+  addLiveEvent('Modo autônomo', enabled ? 'Ativado' : 'Desativado', true);
   if (enabled) autonomousTick();
   for (const req of [{ url: '/api/autonomous/mode', body: { enabled } }, { url: '/api/reinado/ajustes', body: { auto_exec_enabled: enabled } }]) {
     try {
@@ -359,7 +390,7 @@ function createCard(item) {
     card.dataset.approved = '1';
     const row = card.querySelector('.approve-row');
     if (row) row.innerHTML = `<span class="chip mini approved">Aprovado</span>`;
-    addLiveEvent('Jarvis aprovou missão', card.dataset.title || 'Missão sem título');
+    addLiveEvent('Jarvis aprovou missão', card.dataset.title || 'Missão sem título', true);
   });
 
   card.addEventListener('dblclick', () => {
@@ -450,7 +481,7 @@ function renderBoard(columns) {
       const toIndex = [...cards.querySelectorAll('.card')].indexOf(draggedCard);
       updateAllCounts();
       await persistMove({ cardId: draggedCard.dataset.cardId, title: draggedCard.dataset.title, fromColumn, toColumn, toIndex });
-      addLiveEvent('Movimentação de missão', `${draggedCard.dataset.title || 'Missão'}: ${prettyColumn(fromColumn || 'desconhecido')} → ${prettyColumn(toColumn || 'desconhecido')}`);
+      addLiveEvent('Movimentação de missão', `${draggedCard.dataset.title || 'Missão'}: ${prettyColumn(fromColumn || 'desconhecido')} → ${prettyColumn(toColumn || 'desconhecido')}`, true);
     });
 
     column.innerHTML = `<header class="column-head"><span>${escapeHtml(col.name)}</span><span>${normalized.length}</span></header>`;
@@ -485,7 +516,7 @@ function autoDelegateInbox(silent = false) {
 
   renderBoard(boardState);
   if (!silent) notify(`Auto-delegação concluída: ${total} missão(ões).`);
-  addLiveEvent('Stark auto-delegou inbox', `${total} missão(ões) encaminhadas para Assigned.`);
+  addLiveEvent('Stark auto-delegou inbox', `${total} missão(ões) encaminhadas para Assigned.`, true);
 }
 
 function moveOneMission(fromKey, toKey, transform = (x) => x) {
@@ -496,7 +527,7 @@ function moveOneMission(fromKey, toKey, transform = (x) => x) {
   const item = normalizeCard(from.items.shift());
   to.items.unshift(transform(item));
   renderBoard(boardState);
-  addLiveEvent('Fluxo autônomo', `${item.title}: ${prettyColumn(fromKey)} → ${prettyColumn(toKey)}`);
+  addLiveEvent('Fluxo autônomo', `${item.title}: ${prettyColumn(fromKey)} → ${prettyColumn(toKey)}`, true);
   return true;
 }
 
@@ -515,7 +546,7 @@ function autonomousTick() {
     if (!first.approved) {
       assigned.items[0] = { ...first, approved: true };
       renderBoard(boardState);
-      addLiveEvent('Jarvis aprovou missão', first.title);
+      addLiveEvent('Jarvis aprovou missão', first.title, true);
       return;
     }
     if (moveOneMission('assigned', 'in_progress')) return;
@@ -596,7 +627,7 @@ function setupUI() {
 
     addMissionToInbox(card);
     await persistBroadcastMission(card);
-    addLiveEvent('Broadcast recebeu missão', `${card.title} entrou no Inbox para triagem do Stark.`);
+    addLiveEvent('Broadcast recebeu missão', `${card.title} entrou no Inbox para triagem do Stark.`, true);
 
     missionTitleInput.value = '';
     missionDescInput.value = '';
