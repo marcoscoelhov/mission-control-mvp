@@ -14,6 +14,8 @@ const livePanel = document.getElementById('live-panel');
 const toggleLive = document.getElementById('toggle-live');
 const workspace = document.querySelector('.workspace');
 const agentDetails = document.getElementById('agent-details');
+const liveFeed = document.getElementById('live-feed');
+const liveToolbar = document.getElementById('live-toolbar');
 const countEl = document.querySelector('.agents-panel .count');
 const autoDelegateBtn = document.getElementById('auto-delegate');
 const inboxChip = document.getElementById('inbox-chip');
@@ -44,6 +46,7 @@ let refreshTimer = null;
 let refreshMs = Number(localStorage.getItem('mc_refresh_ms') || 15000);
 let boardState = fallbackData.columns.map((c) => ({ name: c.name, items: [...(c.items || [])] }));
 let inboxMissions = [];
+let activityLog = [];
 
 const normalizeColumnKey = (name = '') => name.toLowerCase().trim().replace(/\s+/g, '_');
 const prettyColumn = (key = '') => key.replaceAll('_', ' ').replace(/\b\w/g, (m) => m.toUpperCase());
@@ -52,6 +55,32 @@ const escapeHtml = (s = '') => String(s).replaceAll('&', '&amp;').replaceAll('<'
 
 function notify(msg) {
   console.log(msg);
+}
+
+function renderLiveFeed() {
+  if (!liveFeed) return;
+  liveFeed.innerHTML = '';
+  if (!activityLog.length) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-column';
+    empty.textContent = 'Sem eventos ainda. O histórico aparece aqui.';
+    liveFeed.appendChild(empty);
+    return;
+  }
+
+  activityLog.forEach((ev) => {
+    const item = document.createElement('article');
+    item.className = 'feed-item';
+    item.innerHTML = `<strong>${escapeHtml(ev.title)}</strong><p>${escapeHtml(ev.message)}</p>`;
+    liveFeed.appendChild(item);
+  });
+}
+
+function addLiveEvent(title, message) {
+  const time = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  activityLog.unshift({ title, message: `${message} • ${time}` });
+  activityLog = activityLog.slice(0, 80);
+  renderLiveFeed();
 }
 
 function setAutonomousVisuals(enabled) {
@@ -184,6 +213,7 @@ async function saveAutonomousMode(enabled) {
   localStorage.setItem('mc_autonomous', enabled ? '1' : '0');
   autonomousStatus.textContent = enabled ? 'Modo autônomo ativado.' : 'Modo autônomo desativado.';
   setAutonomousVisuals(enabled);
+  addLiveEvent('Modo autônomo', enabled ? 'Ativado' : 'Desativado');
   for (const req of [{ url: '/api/autonomous/mode', body: { enabled } }, { url: '/api/reinado/ajustes', body: { auto_exec_enabled: enabled } }]) {
     try {
       const res = await fetch(req.url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req.body) });
@@ -257,6 +287,7 @@ function renderAgents(agents) {
         document.querySelectorAll('.agent-item.active').forEach((el) => el.classList.remove('active'));
         item.classList.add('active');
         renderAgentDetails(agent);
+        setLiveTab('agent');
         if (livePanel.classList.contains('collapsed')) {
           livePanel.classList.remove('collapsed');
           workspace.classList.remove('live-collapsed');
@@ -323,6 +354,7 @@ function createCard(item) {
     card.dataset.approved = '1';
     const row = card.querySelector('.approve-row');
     if (row) row.innerHTML = `<span class="chip mini approved">Aprovado</span>`;
+    addLiveEvent('Jarvis aprovou missão', card.dataset.title || 'Missão sem título');
   });
 
   card.addEventListener('dblclick', () => {
@@ -413,6 +445,7 @@ function renderBoard(columns) {
       const toIndex = [...cards.querySelectorAll('.card')].indexOf(draggedCard);
       updateAllCounts();
       await persistMove({ cardId: draggedCard.dataset.cardId, title: draggedCard.dataset.title, fromColumn, toColumn, toIndex });
+      addLiveEvent('Movimentação de missão', `${draggedCard.dataset.title || 'Missão'}: ${prettyColumn(fromColumn || 'desconhecido')} → ${prettyColumn(toColumn || 'desconhecido')}`);
     });
 
     column.innerHTML = `<header class="column-head"><span>${escapeHtml(col.name)}</span><span>${normalized.length}</span></header>`;
@@ -443,11 +476,18 @@ function autoDelegateInbox() {
 
   renderBoard(boardState);
   notify(`Auto-delegação concluída: ${total} missão(ões).`);
+  addLiveEvent('Stark auto-delegou inbox', `${total} missão(ões) encaminhadas para Assigned.`);
 }
 
 function setSettingsTab(tab) {
   settingsTabButtons.forEach((btn) => btn.classList.toggle('active', btn.dataset.tab === tab));
   document.querySelectorAll('.settings-section').forEach((section) => section.classList.toggle('active', section.id === `tab-${tab}`));
+}
+
+function setLiveTab(tab) {
+  document.querySelectorAll('#live-toolbar .chip').forEach((btn) => btn.classList.toggle('active', btn.dataset.liveTab === tab));
+  document.getElementById('live-history-tab')?.classList.toggle('live-tab-active', tab === 'history');
+  document.getElementById('live-agent-tab')?.classList.toggle('live-tab-active', tab === 'agent');
 }
 
 function startRealtimeRefresh() {
@@ -463,6 +503,13 @@ function setupUI() {
   toggleLive.addEventListener('click', () => {
     const isCollapsed = livePanel.classList.toggle('collapsed');
     workspace.classList.toggle('live-collapsed', isCollapsed);
+    if (!isCollapsed) setLiveTab('history');
+  });
+
+  liveToolbar?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-live-tab]');
+    if (!btn) return;
+    setLiveTab(btn.dataset.liveTab);
   });
 
   autoDelegateBtn?.addEventListener('click', autoDelegateInbox);
@@ -498,6 +545,7 @@ function setupUI() {
 
     addMissionToInbox(card);
     await persistBroadcastMission(card);
+    addLiveEvent('Broadcast recebeu missão', `${card.title} entrou no Inbox para triagem do Stark.`);
 
     missionTitleInput.value = '';
     missionDescInput.value = '';
@@ -528,9 +576,12 @@ function setupUI() {
 
 async function init() {
   setupUI();
+  renderLiveFeed();
+  setLiveTab('history');
   const [dashboard, agents] = await Promise.all([loadDashboard(), loadAgentsDetails(), loadMission()]);
   renderBoard(dashboard.columns || fallbackData.columns);
   if (agents.length) renderAgents(agents);
+  addLiveEvent('Live inicializado', 'Histórico pronto para acompanhar o que foi feito.');
   startRealtimeRefresh();
 }
 
