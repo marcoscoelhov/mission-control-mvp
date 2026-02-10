@@ -65,12 +65,37 @@ def dispatch_mission_to_openclaw(mission):
         f"[MISSION CONTROL] Execução autônoma: {title} | missionId={mission_id} | Responsável: {owner}. "
         f"Contexto: {desc}. {guard}"
     )
+
+    owner_map = {
+        'stark': 'stark',
+        'thanos': 'thanos',
+        'wanda': 'wanda',
+        'alfred': 'alfred',
+        'jarvis': 'jarvis',
+        'oráculo': 'oraculo',
+        'oraculo': 'oraculo',
+    }
+    agent_id = owner_map.get(str(owner).strip().lower(), 'stark')
+
+    # Prefer explicit agent dispatch (real delegation). Fallback to system event.
+    try:
+        subprocess.Popen(
+            ['openclaw', 'agent', '--agent', agent_id, '--message', text, '--timeout', '120'],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        mission['dispatchAgent'] = agent_id
+        return True
+    except Exception:
+        pass
+
     try:
         subprocess.Popen(
             ['openclaw', 'system', 'event', '--text', text, '--mode', 'now'],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
+        mission['dispatchAgent'] = 'system_event_fallback'
         return True
     except Exception:
         return False
@@ -826,10 +851,11 @@ class Handler(SimpleHTTPRequestHandler):
             if data.get('autonomous'):
                 dispatched = dispatch_mission_to_openclaw(mission)
                 mission['executed'] = dispatched
+                dispatch_target = mission.get('dispatchAgent', mission.get('owner', 'stark'))
                 append_trail_entry(
                     mission['id'],
                     mission.get('title', 'Missão sem título'),
-                    'Despacho autônomo para OpenClaw executado.' if dispatched else 'Falha no despacho autônomo para OpenClaw.'
+                    (f"Despacho autônomo para OpenClaw executado (agent: {dispatch_target})." if dispatched else 'Falha no despacho autônomo para OpenClaw.')
                 )
 
             save_data(data)
@@ -984,8 +1010,10 @@ class Handler(SimpleHTTPRequestHandler):
                 record_transition(data, mission_id or 'unknown', from_col, to_col, actor=owner, reason='autonomous_move', title=title, transition_id=transition_id)
                 append_trail_entry(mission_id or 'unknown', title, f"Fluxo autônomo: {from_col} → {to_col} (owner: {owner}).")
                 if str(to_col).lower() == 'in_progress':
-                    dispatched = dispatch_mission_to_openclaw({'id': mission_id, 'title': title, 'desc': payload.get('desc', ''), 'owner': owner})
-                    append_trail_entry(mission_id or 'unknown', title, 'Despacho real para OpenClaw enviado.' if dispatched else 'Falha ao despachar para OpenClaw.')
+                    dispatch_payload = {'id': mission_id, 'title': title, 'desc': payload.get('desc', ''), 'owner': owner}
+                    dispatched = dispatch_mission_to_openclaw(dispatch_payload)
+                    dispatch_target = dispatch_payload.get('dispatchAgent', owner)
+                    append_trail_entry(mission_id or 'unknown', title, (f'Despacho real para OpenClaw enviado (agent: {dispatch_target}).' if dispatched else 'Falha ao despachar para OpenClaw.'))
             elif action == 'clarification_reply':
                 from_c = payload.get('fromColumn', '?')
                 to_c = payload.get('toColumn', '?')
