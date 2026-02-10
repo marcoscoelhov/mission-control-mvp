@@ -345,16 +345,39 @@ body {
   gap: 8px;
 }
 
-.collapse-btn {
-  border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.05);
-  color: #dce4f6;
-  border-radius: 8px;
+.header-icon-btn {
   width: 24px;
   height: 24px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+  display: grid;
+  place-items: center;
   cursor: pointer;
-  font-size: 14px;
-  line-height: 1;
+  padding: 0;
+  transition: all 0.2s ease;
+}
+
+.header-icon-btn:hover {
+  background: rgba(126, 249, 207, 0.12);
+  border-color: rgba(126, 249, 207, 0.35);
+}
+
+.icon-bars {
+  display: grid;
+  gap: 2px;
+}
+
+.icon-bars i {
+  display: block;
+  width: 10px;
+  height: 1.4px;
+  border-radius: 2px;
+  background: #b9c6df;
+}
+
+.workspace.live-collapsed .header-icon-btn {
+  opacity: 0.75;
 }
 
 .live-toolbar {
@@ -390,9 +413,7 @@ body {
   gap: 10px;
 }
 
-.live-panel.collapsed .collapse-btn {
-  transform: rotate(180deg);
-}
+/* collapse button removed */
 
 .feed-item {
   border: 1px solid rgba(255, 255, 255, 0.1);
