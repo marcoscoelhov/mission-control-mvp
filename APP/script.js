@@ -51,6 +51,8 @@ const normalizeAgent = (agent) => {
     icon: agent?.icon || '🤖',
     name: agent?.name || 'Agent',
     role: agent?.role || 'OpenClaw Agent',
+    rank: agent?.rank || '—',
+    mission: agent?.mission || '',
     status: agent?.status || 'online',
     model: agent?.model || 'unknown',
     soul: agent?.soul || '',
@@ -133,8 +135,11 @@ function renderAgentDetails(agent) {
     </div>
     <div class="meta-grid">
       <div class="meta-item"><span>Modelo</span><strong>${escapeHtml(agent.model)}</strong></div>
+      <div class="meta-item"><span>Patente</span><strong>${escapeHtml(agent.rank || '—')}</strong></div>
+      <div class="meta-item"><span>Função</span><strong>${escapeHtml(agent.role)}</strong></div>
       <div class="meta-item"><span>Agent ID</span><strong>${escapeHtml(agent.id)}</strong></div>
     </div>
+    <div class="doc-block"><h4>Missão do Agente</h4><pre>${escapeHtml(agent.mission || 'Não definida ainda.')}</pre></div>
     <div class="doc-block"><h4>SOUL.md</h4><pre>${escapeHtml(soul)}</pre></div>
     <div class="doc-block"><h4>MEMORY.md</h4><pre>${escapeHtml(memory)}</pre></div>
   `;
