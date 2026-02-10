@@ -47,6 +47,8 @@ const saveGeneralBtn = document.getElementById('save-general');
 const toastWrap = document.getElementById('toast-wrap');
 const throughputValue = document.getElementById('throughput-value');
 const missionHistoryView = document.getElementById('mission-history-view');
+const agentsActiveValue = document.getElementById('agents-active-value');
+const tasksQueueValue = document.getElementById('tasks-queue-value');
 
 let draggedCard = null;
 let selectedAgentId = null;
@@ -156,6 +158,25 @@ function addLiveEvent(title, message, emphasize = false, meta = {}) {
 
 function setAutonomousVisuals(enabled) {
   document.body.classList.toggle('autonomous-on', Boolean(enabled));
+}
+
+function updateHeaderMetrics() {
+  if (agentsActiveValue) {
+    const active = [...document.querySelectorAll('.status')].filter((el) => {
+      const t = (el.textContent || '').toLowerCase();
+      return t.includes('trabalhando') || t.includes('online');
+    }).length;
+    agentsActiveValue.textContent = String(active);
+  }
+
+  if (tasksQueueValue) {
+    const total = (boardState || []).reduce((acc, c) => {
+      const key = normalizeColumnKey(c.name || '');
+      if (key === 'done') return acc;
+      return acc + (Array.isArray(c.items) ? c.items.length : 0);
+    }, 0);
+    tasksQueueValue.textContent = String(total);
+  }
 }
 
 function priorityScore(card) {
@@ -401,6 +422,7 @@ function renderAgents(agents) {
   });
 
   if (selected) renderAgentDetails(selected);
+  updateHeaderMetrics();
 }
 
 function serializeCard(card) {
@@ -569,6 +591,8 @@ function renderBoard(columns) {
     column.appendChild(cards);
     kanban.appendChild(column);
   });
+
+  updateHeaderMetrics();
 }
 
 function getColumn(key) {

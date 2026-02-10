@@ -21,6 +21,17 @@
       "name": "Done",
       "items": [
         {
+          "cardId": "card_header",
+          "title": "header",
+          "desc": "numeros reais no header",
+          "owner": "Wanda",
+          "eta": "agora",
+          "impactRevenue": 3,
+          "impactAutonomy": 3,
+          "urgency": 3,
+          "approved": true
+        },
+        {
           "title": "header",
           "desc": "numeros reais no header",
           "owner": "Stark",
@@ -43,5 +54,8 @@
       ]
     }
   ],
-  "feed": []
+  "feed": [],
+  "missionIndex": {
+    "card_header": "m_2b12c1e170"
+  }
 }
