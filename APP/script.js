@@ -46,6 +46,7 @@ const apiAutonomousInput = document.getElementById('api-autonomous');
 const saveGeneralBtn = document.getElementById('save-general');
 const toastWrap = document.getElementById('toast-wrap');
 const throughputValue = document.getElementById('throughput-value');
+const missionHistoryView = document.getElementById('mission-history-view');
 
 let draggedCard = null;
 let selectedAgentId = null;
@@ -56,6 +57,7 @@ let boardState = fallbackData.columns.map((c) => ({ name: c.name, items: [...(c.
 let inboxMissions = [];
 let activityLog = [];
 let executionsWindow = [];
+let selectedMissionKey = 'system';
 
 const normalizeColumnKey = (name = '') => name.toLowerCase().trim().replace(/\s+/g, '_');
 const prettyColumn = (key = '') => key.replaceAll('_', ' ').replace(/\b\w/g, (m) => m.toUpperCase());
@@ -89,6 +91,20 @@ function pulseFlow() {
   setTimeout(() => kanban.classList.remove('flow-active'), 1300);
 }
 
+function renderMissionHistory(key) {
+  if (!missionHistoryView) return;
+  const logs = activityLog.filter((e) => (e.missionKey || 'system') === key);
+  if (!logs.length) {
+    missionHistoryView.textContent = 'Sem eventos para esta missão.';
+    return;
+  }
+  missionHistoryView.textContent = logs
+    .slice()
+    .reverse()
+    .map((e) => `- ${e.title}: ${e.message}`)
+    .join('\n');
+}
+
 function renderLiveFeed() {
   if (!liveFeed) return;
   liveFeed.innerHTML = '';
@@ -100,18 +116,36 @@ function renderLiveFeed() {
     return;
   }
 
+  const missionMap = new Map();
   activityLog.forEach((ev) => {
+    const key = ev.missionKey || 'system';
+    if (!missionMap.has(key)) missionMap.set(key, ev);
+  });
+
+  const cards = [...missionMap.entries()].map(([key, ev]) => ({ key, ev }));
+  if (!cards.find((c) => c.key === selectedMissionKey)) selectedMissionKey = cards[0]?.key || 'system';
+
+  cards.forEach(({ key, ev }) => {
     const item = document.createElement('article');
-    item.className = 'feed-item';
-    item.innerHTML = `<strong>${escapeHtml(ev.title)}</strong><p>${escapeHtml(ev.message)}</p>`;
+    item.className = `feed-item ${key === selectedMissionKey ? 'active' : ''}`;
+    item.innerHTML = `<strong>${escapeHtml(ev.missionTitle || ev.title)}</strong><p>${escapeHtml(ev.message)}</p>`;
+    item.addEventListener('click', () => {
+      selectedMissionKey = key;
+      renderLiveFeed();
+      renderMissionHistory(key);
+    });
     liveFeed.appendChild(item);
   });
+
+  renderMissionHistory(selectedMissionKey);
 }
 
-function addLiveEvent(title, message, emphasize = false) {
+function addLiveEvent(title, message, emphasize = false, meta = {}) {
   const time = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
-  activityLog.unshift({ title, message: `${message} • ${time}` });
-  activityLog = activityLog.slice(0, 80);
+  const missionKey = meta.missionKey || 'system';
+  const missionTitle = meta.missionTitle || null;
+  activityLog.unshift({ title, missionTitle, missionKey, message: `${message} • ${time}` });
+  activityLog = activityLog.slice(0, 200);
   renderLiveFeed();
   if (emphasize) {
     showToast(`${title}: ${message}`);
@@ -140,6 +174,7 @@ function normalizeCard(item) {
   if (Array.isArray(item)) {
     const [title, desc, owner, eta] = item;
     return {
+      cardId: makeCardId(title),
       title,
       desc,
       owner,
@@ -151,6 +186,7 @@ function normalizeCard(item) {
     };
   }
   return {
+    cardId: item.cardId || makeCardId(item.title || 'sem_titulo'),
     title: item.title || 'Sem título',
     desc: item.desc || '',
     owner: item.owner || 'Stark',
@@ -385,7 +421,7 @@ function createCard(item) {
   const card = document.createElement('article');
   card.className = 'card';
   card.draggable = true;
-  card.dataset.cardId = makeCardId(c.title);
+  card.dataset.cardId = c.cardId || makeCardId(c.title);
   card.dataset.title = c.title;
   card.dataset.desc = c.desc;
   card.dataset.owner = c.owner;
@@ -428,7 +464,7 @@ function createCard(item) {
       restoreBoard(before);
       return;
     }
-    addLiveEvent('Jarvis aprovou missão', card.dataset.title || 'Missão sem título', true);
+    addLiveEvent('Jarvis aprovou missão', card.dataset.title || 'Missão sem título', true, { missionKey: card.dataset.cardId || card.dataset.title, missionTitle: card.dataset.title });
   });
 
   card.addEventListener('dblclick', () => {
@@ -526,7 +562,7 @@ function renderBoard(columns) {
         restoreBoard(before);
         return;
       }
-      addLiveEvent('Movimentação de missão', `${draggedCard.dataset.title || 'Missão'}: ${prettyColumn(fromColumn || 'desconhecido')} → ${prettyColumn(toColumn || 'desconhecido')}`, true);
+      addLiveEvent('Movimentação de missão', `${draggedCard.dataset.title || 'Missão'}: ${prettyColumn(fromColumn || 'desconhecido')} → ${prettyColumn(toColumn || 'desconhecido')}`, true, { missionKey: draggedCard.dataset.cardId || draggedCard.dataset.title, missionTitle: draggedCard.dataset.title });
     });
 
     column.innerHTML = `<header class="column-head"><span>${escapeHtml(col.name)}</span><span>${normalized.length}</span></header>`;
@@ -589,7 +625,7 @@ async function moveOneMission(fromKey, toKey, transform = (x) => x) {
     return false;
   }
 
-  addLiveEvent('Fluxo autônomo', `${item.title}: ${prettyColumn(fromKey)} → ${prettyColumn(toKey)}`, true);
+  addLiveEvent('Fluxo autônomo', `${item.title}: ${prettyColumn(fromKey)} → ${prettyColumn(toKey)}`, true, { missionKey: item.cardId || makeCardId(item.title), missionTitle: item.title });
   return true;
 }
 
@@ -615,7 +651,7 @@ async function autonomousTick() {
         restoreBoard(before);
         return;
       }
-      addLiveEvent('Jarvis aprovou missão', first.title, true);
+      addLiveEvent('Jarvis aprovou missão', first.title, true, { missionKey: first.cardId || makeCardId(first.title), missionTitle: first.title });
       return;
     }
     if (await moveOneMission('assigned', 'in_progress')) return;
@@ -708,7 +744,7 @@ function setupUI() {
       return;
     }
 
-    addLiveEvent('Broadcast recebeu missão', `${card.title} entrou no Inbox para triagem do Stark.`, true);
+    addLiveEvent('Broadcast recebeu missão', `${card.title} entrou no Inbox para triagem do Stark.`, true, { missionKey: card.cardId || makeCardId(card.title), missionTitle: card.title });
 
     missionTitleInput.value = '';
     missionDescInput.value = '';

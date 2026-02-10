@@ -698,6 +698,12 @@ body {
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.03);
   padding: 10px;
+  cursor: pointer;
+}
+
+.feed-item.active {
+  border-color: rgba(126, 249, 207, 0.5);
+  background: rgba(126, 249, 207, 0.08);
 }
 
 .feed-item strong {
