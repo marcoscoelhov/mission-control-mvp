@@ -229,6 +229,7 @@ function normalizeCard(item) {
     targetFile: item.targetFile || '',
     expectedChange: item.expectedChange || '',
     acceptanceTest: item.acceptanceTest || '',
+    clarificationAsked: Boolean(item.clarificationAsked),
   };
 }
 
@@ -470,6 +471,7 @@ function serializeCard(card) {
     targetFile: card.dataset.targetFile || '',
     expectedChange: card.dataset.expectedChange || '',
     acceptanceTest: card.dataset.acceptanceTest || '',
+    clarificationAsked: card.dataset.clarificationAsked === '1',
   };
 }
 
@@ -495,6 +497,7 @@ function createCard(item) {
   card.dataset.targetFile = c.targetFile || '';
   card.dataset.expectedChange = c.expectedChange || '';
   card.dataset.acceptanceTest = c.acceptanceTest || '';
+  card.dataset.clarificationAsked = c.clarificationAsked ? '1' : '0';
 
   const score = priorityScore(c);
   const approveBtn = c.approved
@@ -504,6 +507,7 @@ function createCard(item) {
     ? `<span class="chip mini approved">Efetiva</span>`
     : (c.needsEffectiveness ? `<span class="chip mini">Revisão de efetividade</span>` : `<span class="chip mini">Efetividade pendente</span>`);
   const executionBadge = c.executionStatus ? `<span class="chip mini">${escapeHtml(c.executionStatus)}</span>` : '';
+  const oracleBadge = c.clarificationAsked ? `<span class="chip mini">Oráculo perguntou no WhatsApp</span>` : '';
 
   card.innerHTML = `
     <h3>${escapeHtml(c.title)}</h3>
@@ -518,7 +522,7 @@ function createCard(item) {
       <span>${escapeHtml(c.owner)}</span>
       <span>${escapeHtml(c.eta)} ago</span>
     </div>
-    <div class="approve-row">${approveBtn} ${effectiveness} ${executionBadge}</div>
+    <div class="approve-row">${approveBtn} ${effectiveness} ${executionBadge} ${oracleBadge}</div>
     ${c.needsUserAction ? `<div class="empty-column" style="margin-top:8px">Ação necessária: ${escapeHtml(c.needsUserAction)}</div>` : ''}
   `;
 
@@ -789,6 +793,7 @@ async function autonomousTick() {
           owner: 'Alfred',
           executionStatus: status,
           needsUserAction,
+          clarificationAsked: Boolean(exec.clarificationSent),
         });
 
         renderBoard(boardState);
