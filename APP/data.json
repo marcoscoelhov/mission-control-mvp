@@ -21,6 +21,16 @@
       "name": "Done",
       "items": [
         {
+          "title": "header",
+          "desc": "numeros reais no header",
+          "owner": "Stark",
+          "eta": "agora",
+          "impactRevenue": 3,
+          "impactAutonomy": 3,
+          "urgency": 3,
+          "approved": true
+        },
+        {
           "title": "ui",
           "desc": "remova sitegpt do header",
           "owner": "Wanda",

@@ -422,7 +422,7 @@ function createCard(item) {
     card.dataset.approved = '1';
     const row = card.querySelector('.approve-row');
     if (row) row.innerHTML = `<span class="chip mini approved">Aprovado</span>`;
-    const ok = await persistBoardState('approve', { cardId: card.dataset.cardId });
+    const ok = await persistBoardState('approve', { cardId: card.dataset.cardId, title: card.dataset.title });
     if (STRICT_PERSISTENCE && !ok) {
       showToast('Falha ao persistir aprovação no backend');
       restoreBoard(before);
@@ -684,6 +684,7 @@ function setupUI() {
     }
 
     const card = {
+      cardId: makeCardId(title),
       title,
       desc,
       owner: 'Stark',

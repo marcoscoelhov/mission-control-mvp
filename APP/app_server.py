@@ -8,6 +8,7 @@ from pathlib import Path
 
 BASE = Path(__file__).resolve().parent
 DATA_FILE = BASE / 'data.json'
+TRAIL_FILE = BASE / 'MISSOES_TRAJETO.md'
 
 DEFAULT_DATA = {
     'agents': [],
@@ -49,6 +50,31 @@ def load_data():
 
 def save_data(data):
     DATA_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+
+
+def ensure_trail_file():
+    if TRAIL_FILE.exists():
+        return
+    TRAIL_FILE.write_text(
+        "# Missões — Trajeto Completo\n\n"
+        "Este arquivo guarda o histórico completo de cada missão (um card por missão).\n\n",
+        encoding='utf-8',
+    )
+
+
+def append_trail_entry(mission_id, title, line):
+    ensure_trail_file()
+    text = TRAIL_FILE.read_text(encoding='utf-8')
+    marker = f"## CARD {mission_id} — {title}"
+    if marker not in text:
+        text += (
+            f"\n{marker}\n"
+            f"- Status: criado\n"
+            f"- Trajeto:\n"
+        )
+    ts = time.strftime('%Y-%m-%d %H:%M:%S UTC', time.gmtime())
+    text += f"  - [{ts}] {line}\n"
+    TRAIL_FILE.write_text(text, encoding='utf-8')
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -98,10 +124,21 @@ class Handler(SimpleHTTPRequestHandler):
             }
             inbox['items'] = [mission] + inbox.get('items', [])
 
+            data.setdefault('missionIndex', {})
+            key = payload.get('cardId') or payload.get('title') or mission['id']
+            data['missionIndex'][str(key)] = mission['id']
+
+            append_trail_entry(mission['id'], mission.get('title', 'Missão sem título'), 'Missão criada via Broadcast e enviada para Inbox.')
+
             dispatched = False
             if data.get('autonomous'):
                 dispatched = dispatch_mission_to_openclaw(mission)
                 mission['executed'] = dispatched
+                append_trail_entry(
+                    mission['id'],
+                    mission.get('title', 'Missão sem título'),
+                    'Despacho autônomo para OpenClaw executado.' if dispatched else 'Falha no despacho autônomo para OpenClaw.'
+                )
 
             save_data(data)
             return self._json(200, {'ok': True, 'missionId': mission['id'], 'dispatched': dispatched})
@@ -112,8 +149,33 @@ class Handler(SimpleHTTPRequestHandler):
             data = load_data()
             if isinstance(board, list):
                 data['columns'] = board
+
+                action = payload.get('action', 'update')
+                title = payload.get('title') or 'Missão sem título'
+                card_id = str(payload.get('cardId') or title)
+                mission_id = data.get('missionIndex', {}).get(card_id) or card_id
+
+                if action == 'move':
+                    append_trail_entry(
+                        mission_id,
+                        title,
+                        f"Movida de {payload.get('fromColumn', '?')} para {payload.get('toColumn', '?')}."
+                    )
+                elif action in ('approve', 'autonomous_approve'):
+                    append_trail_entry(mission_id, title, 'Aprovada por Jarvis.')
+                elif action == 'auto_delegate' and payload.get('title'):
+                    append_trail_entry(mission_id, title, 'Delegação automática executada por Stark.')
+                elif action == 'autonomous_move':
+                    append_trail_entry(
+                        mission_id,
+                        title,
+                        f"Fluxo autônomo: {payload.get('from', '?')} → {payload.get('to', '?')}."
+                    )
+                elif action == 'broadcast_inbox':
+                    append_trail_entry(mission_id, title, 'Confirmada no estado do board (Inbox).')
+
                 save_data(data)
-                return self._json(200, {'ok': True})
+                return self._json(200, {'ok': True, 'trailFile': '/MISSOES_TRAJETO.md'})
             return self._json(400, {'ok': False, 'error': 'invalid board'})
 
         if self.path == '/api/dashboard/move':
