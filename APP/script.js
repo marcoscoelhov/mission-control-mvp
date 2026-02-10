@@ -165,9 +165,9 @@ function priorityScore(card) {
 function inferOwner(text) {
   const t = text.toLowerCase();
   if (/(api|backend|deploy|infra|server|banco|db|código|code|integra)/.test(t)) return 'Thanos';
-  if (/(ui|ux|frontend|front|layout|página|design|landing|tela)/.test(t)) return 'Wanda';
+  if (/(ui|ux|frontend|front|layout|página|design|landing|tela|header|visual)/.test(t)) return 'Wanda';
   if (/(auditoria|auditar|gargalo|dependên|distribui|fluxo|handoff)/.test(t)) return 'Alfred';
-  return 'Stark';
+  return 'Alfred';
 }
 
 function normalizeCard(item) {
@@ -618,7 +618,7 @@ async function moveOneMission(fromKey, toKey, transform = (x) => x) {
   to.items.unshift(transform(item));
   renderBoard(boardState);
 
-  const ok = await persistBoardState('autonomous_move', { title: item.title, from: fromKey, to: toKey });
+  const ok = await persistBoardState('autonomous_move', { title: item.title, desc: item.desc, owner: item.owner, from: fromKey, to: toKey });
   if (STRICT_PERSISTENCE && !ok) {
     showToast('Falha ao persistir fluxo autônomo no backend');
     restoreBoard(before);

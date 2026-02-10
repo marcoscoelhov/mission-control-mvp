@@ -27,7 +27,8 @@ DEFAULT_DATA = {
 def dispatch_mission_to_openclaw(mission):
     title = mission.get('title', 'Missão sem título')
     desc = mission.get('desc', '')
-    text = f"[MISSION CONTROL] Nova missão para execução autônoma: {title}. Contexto: {desc}"
+    owner = mission.get('owner', 'Stark')
+    text = f"[MISSION CONTROL] Execução autônoma: {title} | Responsável: {owner}. Contexto: {desc}"
     try:
         subprocess.Popen(
             ['openclaw', 'system', 'event', '--text', text, '--mode', 'now'],
@@ -166,11 +167,25 @@ class Handler(SimpleHTTPRequestHandler):
                 elif action == 'auto_delegate' and payload.get('title'):
                     append_trail_entry(mission_id, title, 'Delegação automática executada por Stark.')
                 elif action == 'autonomous_move':
+                    from_col = payload.get('from', '?')
+                    to_col = payload.get('to', '?')
+                    owner = payload.get('owner', 'Stark')
                     append_trail_entry(
                         mission_id,
                         title,
-                        f"Fluxo autônomo: {payload.get('from', '?')} → {payload.get('to', '?')}."
+                        f"Fluxo autônomo: {from_col} → {to_col} (owner: {owner})."
                     )
+                    if str(to_col).lower() == 'in_progress':
+                        dispatched = dispatch_mission_to_openclaw({
+                            'title': title,
+                            'desc': payload.get('desc', ''),
+                            'owner': owner,
+                        })
+                        append_trail_entry(
+                            mission_id,
+                            title,
+                            'Despacho real para OpenClaw enviado.' if dispatched else 'Falha ao despachar para OpenClaw.'
+                        )
                 elif action == 'broadcast_inbox':
                     append_trail_entry(mission_id, title, 'Confirmada no estado do board (Inbox).')
 
