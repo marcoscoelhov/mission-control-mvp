@@ -54,6 +54,10 @@ function notify(msg) {
   console.log(msg);
 }
 
+function setAutonomousVisuals(enabled) {
+  document.body.classList.toggle('autonomous-on', Boolean(enabled));
+}
+
 function priorityScore(card) {
   return Number(card.impactRevenue || 0) + Number(card.impactAutonomy || 0) + Number(card.urgency || 0);
 }
@@ -179,6 +183,7 @@ function addMissionToInbox(card) {
 async function saveAutonomousMode(enabled) {
   localStorage.setItem('mc_autonomous', enabled ? '1' : '0');
   autonomousStatus.textContent = enabled ? 'Modo autônomo ativado.' : 'Modo autônomo desativado.';
+  setAutonomousVisuals(enabled);
   for (const req of [{ url: '/api/autonomous/mode', body: { enabled } }, { url: '/api/reinado/ajustes', body: { auto_exec_enabled: enabled } }]) {
     try {
       const res = await fetch(req.url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(req.body) });
@@ -210,24 +215,55 @@ function renderAgentDetails(agent) {
 function renderAgents(agents) {
   agentsList.innerHTML = '';
   if (countEl) countEl.textContent = String(agents.length);
-  const selected = agents.find((a) => a.id === selectedAgentId) || agents[0];
+
+  const rankWeight = { General: 0, Oficial: 1, Conselho: 2 };
+  const ordered = [...agents].sort((a, b) => {
+    const wa = rankWeight[a.rank] ?? 99;
+    const wb = rankWeight[b.rank] ?? 99;
+    if (wa !== wb) return wa - wb;
+    return (a.name || '').localeCompare(b.name || '');
+  });
+
+  const selected = ordered.find((a) => a.id === selectedAgentId) || ordered[0];
   if (selected) selectedAgentId = selected.id;
 
-  agents.forEach((agent) => {
-    const item = document.createElement('article');
-    item.className = `agent-item ${agent.id === selectedAgentId ? 'active' : ''}`;
-    item.innerHTML = `<div class="agent-icon">${escapeHtml(agent.icon)}</div><div class="agent-main"><strong>${escapeHtml(agent.name)}</strong><span>${escapeHtml(agent.role)}</span></div><div class="status">${escapeHtml(agent.status)}</div>`;
-    item.addEventListener('click', () => {
-      selectedAgentId = agent.id;
-      document.querySelectorAll('.agent-item.active').forEach((el) => el.classList.remove('active'));
-      item.classList.add('active');
-      renderAgentDetails(agent);
-      if (livePanel.classList.contains('collapsed')) {
-        livePanel.classList.remove('collapsed');
-        workspace.classList.remove('live-collapsed');
-      }
+  const groups = [
+    ['General', 'Generais'],
+    ['Oficial', 'Oficiais'],
+    ['Conselho', 'Conselho'],
+    ['__other__', 'Outros'],
+  ];
+
+  groups.forEach(([key, label]) => {
+    const list = ordered.filter((a) => (key === '__other__' ? !Object.prototype.hasOwnProperty.call(rankWeight, a.rank) : a.rank === key));
+    if (!list.length) return;
+
+    const header = document.createElement('div');
+    header.className = 'agent-group-label';
+    header.textContent = label;
+    agentsList.appendChild(header);
+
+    list.forEach((agent) => {
+      const statusClass = (agent.status || '').toLowerCase().replace(/\s+/g, '-');
+      const item = document.createElement('article');
+      item.className = `agent-item ${agent.id === selectedAgentId ? 'active' : ''}`;
+      item.innerHTML = `
+        <div class="agent-icon">${escapeHtml(agent.icon)}</div>
+        <div class="agent-main"><strong>${escapeHtml(agent.name)}</strong><span>${escapeHtml(agent.role)}</span></div>
+        <div class="status ${escapeHtml(statusClass)}"><span class="status-dot"></span>${escapeHtml(agent.status)}</div>
+      `;
+      item.addEventListener('click', () => {
+        selectedAgentId = agent.id;
+        document.querySelectorAll('.agent-item.active').forEach((el) => el.classList.remove('active'));
+        item.classList.add('active');
+        renderAgentDetails(agent);
+        if (livePanel.classList.contains('collapsed')) {
+          livePanel.classList.remove('collapsed');
+          workspace.classList.remove('live-collapsed');
+        }
+      });
+      agentsList.appendChild(item);
     });
-    agentsList.appendChild(item);
   });
 
   if (selected) renderAgentDetails(selected);
@@ -478,6 +514,7 @@ function setupUI() {
   const autonomous = localStorage.getItem('mc_autonomous') === '1';
   autonomousToggle.checked = autonomous;
   autonomousStatus.textContent = autonomous ? 'Modo autônomo ativado.' : 'Modo autônomo desativado.';
+  setAutonomousVisuals(autonomous);
   autonomousToggle.addEventListener('change', () => saveAutonomousMode(autonomousToggle.checked));
 
   refreshSecondsInput.value = String(Math.round(refreshMs / 1000));

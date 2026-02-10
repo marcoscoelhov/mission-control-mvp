@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import json, os, re
+import json, os, re, time
 from pathlib import Path
 
 ROOT = Path('/root/.openclaw')
@@ -18,12 +18,19 @@ def read_excerpt(path: Path, n=900):
     txt = re.sub(r'\n{3,}', '\n\n', txt).strip()
     return txt[:n]
 
+EXCLUDED = {'main', 'nvidia-test'}
+RANK_ORDER = {'General': 0, 'Oficial': 1, 'Conselho': 2}
+
 items = []
+now_ms = int(time.time() * 1000)
 for d in sorted([p for p in AGENTS_DIR.iterdir() if p.is_dir()]):
     aid = d.name
+    if aid in EXCLUDED:
+        continue
     rg = registry.get(aid, {})
 
     model = 'unknown'
+    latest_update = 0
     sessions = d / 'sessions' / 'sessions.json'
     if sessions.exists():
       try:
@@ -35,6 +42,7 @@ for d in sorted([p for p in AGENTS_DIR.iterdir() if p.is_dir()]):
                 if best is None or ua > best[0]:
                     best = (ua, v)
         if best:
+            latest_update = int(best[0] or 0)
             model = best[1].get('model', 'unknown')
       except Exception:
         pass
@@ -49,19 +57,29 @@ for d in sorted([p for p in AGENTS_DIR.iterdir() if p.is_dir()]):
 
     icon = display[:1].upper() if display else aid[:1].upper()
 
+    delta = now_ms - latest_update if latest_update else 10**12
+    if delta < 10 * 60 * 1000:
+      status = 'trabalhando'
+    elif delta < 60 * 60 * 1000:
+      status = 'online'
+    else:
+      status = 'idle'
+
     items.append({
       'id': aid,
       'name': display,
       'icon': icon,
       'role': role,
       'rank': rank,
+      'rankOrder': RANK_ORDER.get(rank, 99),
       'mission': mission,
-      'status': 'online',
+      'status': status,
       'model': model,
       'soul': soul,
       'memory': memory
     })
 
+items = sorted(items, key=lambda x: (x.get('rankOrder', 99), x.get('name', '')))
 payload = {'agents': items}
 OUT.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
 print(f'wrote {len(items)} agents -> {OUT}')
