@@ -16,6 +16,16 @@ const workspace = document.querySelector('.workspace');
 const agentDetails = document.getElementById('agent-details');
 const countEl = document.querySelector('.agents-panel .count');
 const autoDelegateBtn = document.getElementById('auto-delegate');
+const openBroadcastBtn = document.getElementById('open-broadcast');
+const broadcastDrawer = document.getElementById('broadcast-drawer');
+const closeBroadcastBtn = document.getElementById('close-broadcast');
+const sendBroadcastBtn = document.getElementById('send-broadcast');
+const missionTitleInput = document.getElementById('mission-title');
+const missionDescInput = document.getElementById('mission-desc');
+const missionRevenueInput = document.getElementById('mission-revenue');
+const missionAutonomyInput = document.getElementById('mission-autonomy');
+const missionUrgencyInput = document.getElementById('mission-urgency');
+const missionEtaInput = document.getElementById('mission-eta');
 
 const settingsDrawer = document.getElementById('settings-drawer');
 const openSettingsBtn = document.getElementById('open-settings');
@@ -31,6 +41,7 @@ let draggedCard = null;
 let selectedAgentId = null;
 let refreshTimer = null;
 let refreshMs = Number(localStorage.getItem('mc_refresh_ms') || 15000);
+let boardState = fallbackData.columns.map((c) => ({ name: c.name, items: [...(c.items || [])] }));
 
 const normalizeColumnKey = (name = '') => name.toLowerCase().trim().replace(/\s+/g, '_');
 const prettyColumn = (key = '') => key.replaceAll('_', ' ').replace(/\b\w/g, (m) => m.toUpperCase());
@@ -137,6 +148,27 @@ async function persistMove(payload) {
     } catch (_) {}
   }
   return false;
+}
+
+async function persistBroadcastMission(payload) {
+  for (const url of ['/api/missions/broadcast', '/api/mission/broadcast', '/api/missions']) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) return true;
+    } catch (_) {}
+  }
+  return false;
+}
+
+function addMissionToInbox(card) {
+  const inbox = boardState.find((c) => normalizeColumnKey(c.name) === 'inbox');
+  if (!inbox) return;
+  inbox.items.unshift(card);
+  renderBoard(boardState);
 }
 
 async function saveAutonomousMode(enabled) {
@@ -284,6 +316,7 @@ function updateAllCounts() {
 }
 
 function renderBoard(columns) {
+  boardState = columns.map((c) => ({ name: c.name, items: [...(c.items || [])] }));
   kanban.innerHTML = '';
 
   columns.forEach((col) => {
@@ -296,6 +329,14 @@ function renderBoard(columns) {
 
     const normalized = (col.items || []).map(normalizeCard).sort((a, b) => priorityScore(b) - priorityScore(a));
     normalized.forEach((item) => cards.appendChild(createCard(item)));
+    if (!normalized.length) {
+      const empty = document.createElement('div');
+      empty.className = 'empty-column';
+      empty.textContent = normalizeColumnKey(col.name) === 'inbox'
+        ? 'Inbox pronto: use Broadcast para enviar uma missão real.'
+        : `Sem missões em ${prettyColumn(normalizeColumnKey(col.name))}.`;
+      cards.appendChild(empty);
+    }
 
     cards.addEventListener('dragover', (e) => { e.preventDefault(); cards.classList.add('drag-over'); });
     cards.addEventListener('dragleave', () => cards.classList.remove('drag-over'));
@@ -375,7 +416,43 @@ function setupUI() {
 
   autoDelegateBtn?.addEventListener('click', autoDelegateInbox);
 
-  openSettingsBtn.addEventListener('click', () => settingsDrawer.classList.add('open'));
+  openBroadcastBtn?.addEventListener('click', () => {
+    broadcastDrawer.classList.add('open');
+    settingsDrawer.classList.remove('open');
+  });
+  closeBroadcastBtn?.addEventListener('click', () => broadcastDrawer.classList.remove('open'));
+
+  sendBroadcastBtn?.addEventListener('click', async () => {
+    const title = missionTitleInput.value.trim();
+    const desc = missionDescInput.value.trim();
+    if (!title || !desc) {
+      notify('Preencha título e descrição da missão.');
+      return;
+    }
+
+    const card = {
+      title,
+      desc,
+      owner: 'Stark',
+      eta: missionEtaInput.value.trim() || 'agora',
+      impactRevenue: Math.max(0, Math.min(5, Number(missionRevenueInput.value || 3))),
+      impactAutonomy: Math.max(0, Math.min(5, Number(missionAutonomyInput.value || 3))),
+      urgency: Math.max(0, Math.min(5, Number(missionUrgencyInput.value || 3))),
+      approved: false,
+    };
+
+    addMissionToInbox(card);
+    await persistBroadcastMission(card);
+
+    missionTitleInput.value = '';
+    missionDescInput.value = '';
+    broadcastDrawer.classList.remove('open');
+  });
+
+  openSettingsBtn.addEventListener('click', () => {
+    settingsDrawer.classList.add('open');
+    broadcastDrawer.classList.remove('open');
+  });
   closeSettingsBtn.addEventListener('click', () => settingsDrawer.classList.remove('open'));
   settingsTabButtons.forEach((btn) => btn.addEventListener('click', () => setSettingsTab(btn.dataset.tab)));
 

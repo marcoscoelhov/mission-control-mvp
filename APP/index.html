@@ -38,7 +38,7 @@
         <nav class="tabs">
           <button class="tab active">Active</button>
           <button class="tab">Chat</button>
-          <button class="tab">Broadcast</button>
+          <button class="tab" id="open-broadcast">Broadcast</button>
           <button class="tab">Docs</button>
           <button class="header-icon-btn" id="open-settings" aria-label="Abrir configurações" title="Missão, modo autônomo e configurações">⚙</button>
           <button class="header-icon-btn" id="toggle-live" aria-label="Expandir Live" title="Mostrar/ocultar painel Live">
@@ -95,6 +95,31 @@
       </main>
     </div>
 
+    <aside class="broadcast-drawer glass" id="broadcast-drawer" aria-hidden="true">
+      <div class="panel-head">
+        <h2>Broadcast de Missão</h2>
+        <button class="header-icon-btn" id="close-broadcast" aria-label="Fechar">✕</button>
+      </div>
+
+      <div class="settings-section active">
+        <label class="field">
+          <span>Título da missão</span>
+          <input type="text" id="mission-title" placeholder="Ex.: Lançar campanha de retenção" />
+        </label>
+        <label class="field">
+          <span>Descrição</span>
+          <textarea id="mission-desc" rows="5" placeholder="Contexto, objetivo e critérios de sucesso"></textarea>
+        </label>
+        <div class="meta-grid">
+          <label class="field"><span>💰 Receita (0-5)</span><input type="number" id="mission-revenue" min="0" max="5" value="3" /></label>
+          <label class="field"><span>🤖 Autonomia (0-5)</span><input type="number" id="mission-autonomy" min="0" max="5" value="3" /></label>
+          <label class="field"><span>⚡ Urgência (0-5)</span><input type="number" id="mission-urgency" min="0" max="5" value="3" /></label>
+          <label class="field"><span>Prazo</span><input type="text" id="mission-eta" value="agora" /></label>
+        </div>
+        <button class="chip active" id="send-broadcast">Enviar missão para Inbox</button>
+      </div>
+    </aside>
+
     <aside class="settings-drawer glass" id="settings-drawer" aria-hidden="true">
       <div class="panel-head">
         <h2>Configurações</h2>
@@ -130,6 +155,6 @@
       </section>
     </aside>
 
-    <script src="./script.js?v=11"></script>
+    <script src="./script.js?v=12"></script>
   </body>
 </html>
