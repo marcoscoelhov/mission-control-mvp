@@ -876,6 +876,11 @@ body.autonomous-on #auto-delegate {
     font-size: 11px;
   }
 
+  .metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
   .metric strong {
     font-size: 20px;
   }
@@ -902,15 +907,42 @@ body.autonomous-on #auto-delegate {
     height: 30px;
   }
 
-  .board-filters {
-    overflow-x: auto;
-    padding-bottom: 4px;
+  .queue-meta {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    width: 100%;
   }
 
+  .queue-meta .pill,
+  .queue-meta .muted,
+  .queue-meta .chip {
+    justify-self: stretch;
+    text-align: center;
+  }
+
+  .board-filters {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    overflow: visible;
+    padding-bottom: 0;
+  }
+
+  .board-filters .chip {
+    text-align: center;
+  }
+
+  /* mobile real: colunas empilhadas (sem carrossel horizontal) */
   .kanban {
-    grid-template-columns: repeat(5, minmax(90vw, 90vw));
+    grid-template-columns: 1fr;
     gap: 8px;
-    min-height: 360px;
+    min-height: 0;
+    overflow-x: visible;
+  }
+
+  .column {
+    min-height: auto;
   }
 
   .column-head {
@@ -921,7 +953,7 @@ body.autonomous-on #auto-delegate {
   .cards {
     gap: 7px;
     padding: 0 7px 7px;
-    min-height: 160px;
+    min-height: 0;
   }
 
   .card {
@@ -935,6 +967,10 @@ body.autonomous-on #auto-delegate {
 
   .card p {
     font-size: 11px;
+  }
+
+  .agents-list {
+    max-height: 32vh;
   }
 
   .toast-wrap {
