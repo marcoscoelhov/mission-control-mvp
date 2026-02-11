@@ -69,6 +69,9 @@ let executionsWindow = [];
 let selectedMissionKey = 'system';
 let telemetryState = { agents: [], summary: { activeSessions: 0 } };
 let showFailedOnly = false;
+let mobileStageCollapsed = (() => {
+  try { return JSON.parse(localStorage.getItem('mc_mobile_stage_collapsed') || '{}'); } catch (_) { return {}; }
+})();
 
 const normalizeColumnKey = (name = '') => name.toLowerCase().trim().replace(/\s+/g, '_');
 const prettyColumn = (key = '') => key.replaceAll('_', ' ').replace(/\b\w/g, (m) => m.toUpperCase());
@@ -625,7 +628,8 @@ function createCard(item, columnKey = '') {
   const c = normalizeCard(item);
   const card = document.createElement('article');
   card.className = 'card';
-  card.draggable = true;
+  const isMobile = window.matchMedia('(max-width: 768px)').matches;
+  card.draggable = !isMobile;
   card.dataset.missionId = c.id || c.cardId || makeMissionId();
   card.dataset.cardId = card.dataset.missionId;
   card.dataset.title = c.title;
@@ -661,6 +665,7 @@ function createCard(item, columnKey = '') {
     ? `<span class="chip mini approved">Efetiva</span>`
     : (c.needsEffectiveness ? `<span class="chip mini">Revisão de efetividade</span>` : `<span class="chip mini">Efetividade pendente</span>`);
   const executionBadge = c.executionStatus ? `<span class="chip mini">${escapeHtml(c.executionStatus)}</span>` : '';
+  const stageBadge = isMobile && columnKey ? `<span class="chip mini">${escapeHtml(prettyColumn(columnKey))}</span>` : '';
   const oracleBadge = '';
   const clarifyBtn = '';
   const deleteBtn = `<button class="chip mini danger" data-action="delete">Excluir</button>`;
@@ -678,7 +683,7 @@ function createCard(item, columnKey = '') {
       <span>${escapeHtml(c.owner)}</span>
       <span>${escapeHtml(c.eta)} ago</span>
     </div>
-    <div class="approve-row">${approveBtn} ${effectiveness} ${executionBadge} ${oracleBadge}</div>
+    <div class="approve-row">${stageBadge} ${approveBtn} ${effectiveness} ${executionBadge} ${oracleBadge}</div>
     ${c.needsUserAction ? `<div class="empty-column" style="margin-top:8px">Ação necessária: ${escapeHtml(c.needsUserAction)}</div>` : ''}
     <div class="card-actions">${clarifyBtn} ${deleteBtn}</div>
   `;
@@ -849,6 +854,66 @@ function refreshFailedBell() {
   failedBell.title = showFailedOnly ? 'Voltar ao board' : 'Ver falhas (clique para ver/ocultar)';
 }
 
+function renderMobileFlow(columns) {
+  // Mobile needs a flow-first view (like desktop), not hidden side panels.
+  const ORDER = showFailedOnly
+    ? ['failed']
+    : ['inbox', 'assigned', 'in_progress', 'review', 'done', 'failed'];
+
+  const byKey = new Map((columns || []).map((c) => [normalizeColumnKey(c.name), c]));
+
+  const wrap = document.createElement('div');
+  wrap.className = 'mobile-flow';
+
+  ORDER.forEach((key) => {
+    const col = byKey.get(key);
+    if (!col) return;
+
+    const items = (col.items || []).map(normalizeCard).sort((a, b) => priorityScore(b) - priorityScore(a));
+    const count = items.length;
+
+    // keep empties collapsed to reduce noise, but show the stage so the flow is readable.
+    const defaultCollapsed = count === 0;
+    const collapsed = Boolean(mobileStageCollapsed[key] ?? defaultCollapsed);
+
+    const stage = document.createElement('section');
+    stage.className = `mobile-stage ${collapsed ? 'collapsed' : ''} ${count === 0 ? 'is-empty' : ''}`;
+    stage.dataset.stage = key;
+
+    const head = document.createElement('header');
+    head.className = 'mobile-stage-head';
+    head.innerHTML = `
+      <div class="mobile-stage-title">
+        <strong>${escapeHtml(prettyColumn(key))}</strong>
+        <span class="mobile-stage-count">${count}</span>
+      </div>
+      <button class="chip mini" type="button">${collapsed ? 'Abrir' : 'Fechar'}</button>
+    `;
+    head.addEventListener('click', () => {
+      mobileStageCollapsed[key] = !Boolean(mobileStageCollapsed[key]);
+      localStorage.setItem('mc_mobile_stage_collapsed', JSON.stringify(mobileStageCollapsed));
+      renderBoard(boardState);
+    });
+
+    const cards = document.createElement('div');
+    cards.className = 'mobile-stage-cards';
+    if (!items.length) {
+      const empty = document.createElement('div');
+      empty.className = 'empty-column';
+      empty.textContent = `Sem missões em ${prettyColumn(key)}.`;
+      cards.appendChild(empty);
+    } else {
+      items.forEach((item) => cards.appendChild(createCard(item, key)));
+    }
+
+    stage.appendChild(head);
+    stage.appendChild(cards);
+    wrap.appendChild(stage);
+  });
+
+  kanban.appendChild(wrap);
+}
+
 function renderBoard(columns) {
   boardState = columns.map((c) => ({ name: c.name, items: [...(c.items || [])] }));
   const inboxColumn = boardState.find((c) => normalizeColumnKey(c.name) === 'inbox');
@@ -868,24 +933,19 @@ function renderBoard(columns) {
 
   refreshFailedBell();
 
+  if (isMobile) {
+    // In mobile, render a readable pipeline view.
+    renderMobileFlow(columns);
+    updateHeaderMetrics();
+    return;
+  }
+
   const failedColumn = columns.find((c) => normalizeColumnKey(c.name) === 'failed');
   const baseColumns = showFailedOnly
     ? (failedColumn ? [failedColumn] : [])
     : columns.filter((c) => !['inbox', 'failed'].includes(normalizeColumnKey(c.name)));
 
-  const visibleColumns = isMobile
-    ? [...baseColumns].sort((a, b) => {
-        const ak = normalizeColumnKey(a.name);
-        const bk = normalizeColumnKey(b.name);
-        const aCount = Array.isArray(a.items) ? a.items.length : 0;
-        const bCount = Array.isArray(b.items) ? b.items.length : 0;
-        if ((aCount > 0) !== (bCount > 0)) return aCount > 0 ? -1 : 1;
-        const ap = mobilePriority[ak] ?? 99;
-        const bp = mobilePriority[bk] ?? 99;
-        if (ap !== bp) return ap - bp;
-        return 0;
-      })
-    : baseColumns;
+  const visibleColumns = [...baseColumns];
 
   visibleColumns.forEach((col) => {
     const column = document.createElement('section');
