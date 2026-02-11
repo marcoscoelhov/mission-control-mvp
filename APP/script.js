@@ -57,6 +57,9 @@ const missionHistoryView = document.getElementById('mission-history-view');
 const agentsActiveValue = document.getElementById('agents-active-value');
 const tasksQueueValue = document.getElementById('tasks-queue-value');
 
+const boardFilterBar = document.querySelector('.board-filters');
+const boardFilterButtons = [...document.querySelectorAll('.board-filters .chip')];
+
 let draggedCard = null;
 let selectedAgentId = null;
 let refreshTimer = null;
@@ -69,6 +72,10 @@ let executionsWindow = [];
 let selectedMissionKey = 'system';
 let telemetryState = { agents: [], summary: { activeSessions: 0 } };
 let showFailedOnly = false;
+let boardFilter = localStorage.getItem('mc_board_filter') || 'all';
+
+let lastMissionColumn = {};
+let lastTransitionBurstAt = 0;
 let mobileStageCollapsed = (() => {
   try { return JSON.parse(localStorage.getItem('mc_mobile_stage_collapsed') || '{}'); } catch (_) { return {}; }
 })();
@@ -85,6 +92,88 @@ const hasExecutionProof = (cardLike = {}) => {
   return status === 'effective' && evidence.length > 0;
 };
 const escapeHtml = (s = '') => String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+
+function columnCounts(columns) {
+  const out = { inbox: 0, assigned: 0, in_progress: 0, review: 0, done: 0, failed: 0 };
+  (columns || []).forEach((c) => {
+    const k = normalizeColumnKey(c.name || '');
+    if (!out.hasOwnProperty(k)) return;
+    out[k] = Array.isArray(c.items) ? c.items.length : 0;
+  });
+  out.inbox = Array.isArray(inboxMissions) ? inboxMissions.length : 0;
+  return out;
+}
+
+function setActiveFilterButton(labelNeedle = '') {
+  const needle = String(labelNeedle).toLowerCase().trim();
+  boardFilterButtons.forEach((btn) => {
+    const t = (btn.textContent || '').toLowerCase();
+    const is = needle && t.includes(needle);
+    btn.classList.toggle('active', is);
+  });
+}
+
+function applyMobileFilter(columns) {
+  const byKey = new Map((columns || []).map((c) => [normalizeColumnKey(c.name || ''), c]));
+  const filter = showFailedOnly ? 'failed' : boardFilter;
+  const wanted =
+    filter === 'active'
+      ? ['in_progress', 'assigned', 'review']
+      : filter === 'assigned'
+        ? ['assigned']
+        : filter === 'review'
+          ? ['review']
+          : filter === 'done'
+            ? ['done']
+            : filter === 'failed' || filter === 'waiting'
+              ? ['failed']
+              : ['in_progress', 'assigned', 'review', 'done'];
+
+  const out = wanted.map((k) => byKey.get(k)).filter(Boolean);
+  return out.length ? out : (columns || []).filter((c) => normalizeColumnKey(c.name || '') !== 'inbox');
+}
+
+function refreshMobileFilterLabels(counts) {
+  if (!boardFilterButtons.length) return;
+  const c = counts || {};
+  const activeCount = Number(c.in_progress || 0) + Number(c.assigned || 0) + Number(c.review || 0);
+
+  boardFilterButtons.forEach((btn) => {
+    const raw = (btn.textContent || '').trim();
+    const base = raw.split(':')[0].split('(')[0].trim();
+    const key = base.toLowerCase();
+
+    if (key === 'inbox') {
+      btn.textContent = `Inbox (${c.inbox || 0})`;
+      return;
+    }
+    if (key === 'assigned') {
+      btn.textContent = `Assigned (${c.assigned || 0})`;
+      return;
+    }
+    if (key === 'active') {
+      btn.textContent = `Active (${activeCount})`;
+      return;
+    }
+    if (key === 'review') {
+      btn.textContent = `Review (${c.review || 0})`;
+      return;
+    }
+    if (key === 'done') {
+      btn.textContent = `Done (${c.done || 0})`;
+      return;
+    }
+    if (key === 'waiting') {
+      btn.textContent = `Waiting (${c.failed || 0})`;
+      btn.style.display = (c.failed || 0) > 0 ? 'inline-flex' : 'none';
+      return;
+    }
+    if (key === 'all') {
+      const total = Number(c.in_progress || 0) + Number(c.assigned || 0) + Number(c.review || 0) + Number(c.done || 0);
+      btn.textContent = `All (${total})`;
+    }
+  });
+}
 
 function notify(msg) {
   console.log(msg);
@@ -104,6 +193,39 @@ function bumpThroughput() {
   executionsWindow.push(now);
   executionsWindow = executionsWindow.filter((x) => now - x <= 60000);
   if (throughputValue) throughputValue.textContent = String(executionsWindow.length);
+}
+
+function detectAndLogTransitions(columns) {
+  const now = Date.now();
+  const next = {};
+  const changes = [];
+
+  (columns || []).forEach((col) => {
+    const key = normalizeColumnKey(col.name || '');
+    (col.items || []).forEach((m) => {
+      const c = normalizeCard(m);
+      const id = c.id || c.cardId;
+      if (!id) return;
+      next[id] = key;
+      const prev = lastMissionColumn[id];
+      if (prev && prev !== key) {
+        changes.push({ id, title: c.title || 'Missão', from: prev, to: key });
+      }
+    });
+  });
+
+  lastMissionColumn = next;
+
+  // Avoid spamming on big refreshes; log only small bursts.
+  if (changes.length && (now - lastTransitionBurstAt) > 1200) {
+    changes.slice(0, 5).forEach((ch) => {
+      addLiveEvent('Fluxo', `${ch.title}: ${prettyColumn(ch.from)} → ${prettyColumn(ch.to)}`, true, {
+        missionKey: ch.id,
+        missionTitle: ch.title,
+      });
+    });
+    lastTransitionBurstAt = now;
+  }
 }
 
 function pulseFlow() {
@@ -624,6 +746,24 @@ function serializeCard(card) {
   };
 }
 
+function mobileStepperHtml(currentKey = '') {
+  const k = normalizeColumnKey(currentKey || '');
+  const steps = [
+    { key: 'assigned', label: 'Assigned' },
+    { key: 'in_progress', label: 'In Progress' },
+    { key: 'review', label: 'Review' },
+    { key: 'done', label: 'Done' },
+  ];
+  const idx = Math.max(0, steps.findIndex((s) => s.key === k));
+  return `
+    <div class="stepper" aria-label="Progresso">
+      ${steps
+        .map((s, i) => `<span class="step ${i <= idx ? 'on' : ''} ${s.key === k ? 'current' : ''}">${s.label}</span>`)
+        .join('')}
+    </div>
+  `;
+}
+
 function createCard(item, columnKey = '') {
   const c = normalizeCard(item);
   const card = document.createElement('article');
@@ -665,13 +805,14 @@ function createCard(item, columnKey = '') {
     ? `<span class="chip mini approved">Efetiva</span>`
     : (c.needsEffectiveness ? `<span class="chip mini">Revisão de efetividade</span>` : `<span class="chip mini">Efetividade pendente</span>`);
   const executionBadge = c.executionStatus ? `<span class="chip mini">${escapeHtml(c.executionStatus)}</span>` : '';
-  const stageBadge = isMobile && columnKey ? `<span class="chip mini">${escapeHtml(prettyColumn(columnKey))}</span>` : '';
+  const stageBadge = '';
   const oracleBadge = '';
   const clarifyBtn = '';
   const deleteBtn = `<button class="chip mini danger" data-action="delete">Excluir</button>`;
 
   card.innerHTML = `
     <h3>${escapeHtml(c.title)}</h3>
+    ${isMobile ? mobileStepperHtml(columnKey) : ''}
     <p>${escapeHtml(c.desc)}</p>
     <div class="score-row">
       <span class="score-pill">💰 ${c.impactRevenue}</span>
@@ -812,6 +953,16 @@ function createCard(item, columnKey = '') {
     });
   });
 
+  card.addEventListener('click', () => {
+    if (!isMobile) return;
+    // Mobile: tap selects mission + toggles compact/expanded view.
+    selectedMissionKey = card.dataset.cardId || selectedMissionKey;
+    card.classList.toggle('expanded');
+    renderLiveFeed();
+    renderMissionHistory(selectedMissionKey);
+    // Keep a visible "peek" of Live; user can expand fully via button.
+  });
+
   card.addEventListener('dblclick', () => {
     const r = Number(prompt('Impacto Receita (0-5):', card.dataset.impactRevenue || '3'));
     const a = Number(prompt('Impacto Autonomia (0-5):', card.dataset.impactAutonomy || '3'));
@@ -920,22 +1071,25 @@ function renderBoard(columns) {
   inboxMissions = [...(inboxColumn?.items || [])].map(normalizeCard);
   refreshInboxChip();
 
+  // Automatically produce Live events when backend state changes (mobile needs this to be intelligible).
+  detectAndLogTransitions(boardState.filter((c) => normalizeColumnKey(c.name) !== 'inbox'));
+
   kanban.innerHTML = '';
 
   const isMobile = window.matchMedia('(max-width: 768px)').matches;
-  const mobilePriority = {
-    done: 0,
-    in_progress: 1,
-    assigned: 2,
-    review: 3,
-    failed: 4,
-  };
 
   refreshFailedBell();
 
   if (isMobile) {
-    // In mobile, render a readable pipeline view.
-    renderMobileFlow(columns);
+    const counts = columnCounts(boardState);
+    refreshMobileFilterLabels(counts);
+    setActiveFilterButton((showFailedOnly || boardFilter === 'failed') ? 'waiting' : boardFilter);
+
+    // In mobile, render a readable pipeline view (stages + collapse) and let filters reduce noise.
+    const filtered = applyMobileFilter(boardState);
+    const inbox = boardState.find((c) => normalizeColumnKey(c.name) === 'inbox');
+    const mobileCols = [inbox, ...filtered].filter(Boolean);
+    renderMobileFlow(mobileCols);
     updateHeaderMetrics();
     return;
   }
@@ -1268,6 +1422,12 @@ function startRealtimeRefresh() {
 }
 
 function setupUI() {
+  const isMobile = window.matchMedia('(max-width: 768px)').matches;
+  if (isMobile && !localStorage.getItem('mc_board_filter')) {
+    boardFilter = 'active';
+    localStorage.setItem('mc_board_filter', 'active');
+  }
+
   workspace.classList.add('live-collapsed');
   toggleLive.addEventListener('click', () => {
     const isCollapsed = livePanel.classList.toggle('collapsed');
@@ -1286,6 +1446,31 @@ function setupUI() {
   inboxChip?.addEventListener('click', () => {
     broadcastDrawer.classList.add('open');
     settingsDrawer.classList.remove('open');
+  });
+
+  boardFilterButtons.forEach((btn) => {
+    const base = (btn.textContent || '').trim().toLowerCase();
+    btn.dataset.filter = base;
+  });
+
+  boardFilterBar?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.board-filters .chip');
+    if (!btn) return;
+    const raw = String(btn.dataset.filter || btn.textContent || '').trim().toLowerCase();
+    const label = raw.split('(')[0].trim();
+
+    if (label === 'inbox') {
+      broadcastDrawer.classList.add('open');
+      settingsDrawer.classList.remove('open');
+      chatDrawer?.classList.remove('open');
+      return;
+    }
+
+    showFailedOnly = false;
+    boardFilter = label === 'waiting' ? 'failed' : label;
+    localStorage.setItem('mc_board_filter', boardFilter);
+    showToast(`Filtro: ${boardFilter}`);
+    renderBoard(boardState);
   });
 
   failedBell?.addEventListener('click', () => {

@@ -1229,6 +1229,55 @@ body.autonomous-on #auto-delegate {
     display: none;
   }
 
+  .card-actions {
+    display: none;
+  }
+
+  .card.expanded p {
+    -webkit-line-clamp: unset;
+  }
+
+  .card.expanded .score-row {
+    display: flex;
+  }
+
+  .card.expanded .card-actions {
+    display: flex;
+  }
+
+  .stepper {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 6px 0 2px;
+  }
+
+  .stepper .step {
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: rgba(220, 228, 246, 0.75);
+    background: rgba(255, 255, 255, 0.03);
+    letter-spacing: 0.02em;
+  }
+
+  .stepper .step.on {
+    color: #baf7ea;
+    border-color: rgba(126, 249, 207, 0.35);
+    background: rgba(126, 249, 207, 0.12);
+  }
+
+  .stepper .step.current {
+    box-shadow: 0 0 0 1px rgba(126, 249, 207, 0.16) inset;
+  }
+
+  /* Live bottom sheet: keep a visible peek even when collapsed */
+  .live-panel.collapsed {
+    display: block;
+    transform: translateY(calc(100% - 54px));
+  }
+
   .live-panel:not(.collapsed) {
     transform: translateY(0);
   }
