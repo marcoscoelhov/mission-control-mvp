@@ -72,9 +72,9 @@ body {
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   border-radius: 18px;
-  padding: 16px 18px;
+  padding: 14px 16px;
 }
 
 .brand {
@@ -354,7 +354,7 @@ body {
   display: grid;
   gap: 8px;
   padding: 0 8px 8px;
-  min-height: 120px;
+  min-height: 72px;
   transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
@@ -599,7 +599,7 @@ body {
 .empty-column {
   border: 1px dashed rgba(255,255,255,0.18);
   border-radius: 10px;
-  padding: 10px;
+  padding: 8px 10px;
   font-size: 11px;
   color: var(--muted);
   background: rgba(255,255,255,0.02);
@@ -809,16 +809,17 @@ body.autonomous-on #auto-delegate {
 
   .topbar {
     grid-template-columns: 1fr;
-    gap: 10px;
+    gap: 8px;
     position: sticky;
     top: 8px;
     z-index: 20;
+    padding: 12px;
   }
 
   .metrics {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 10px;
+    gap: 8px;
     justify-content: stretch;
   }
 
@@ -837,24 +838,47 @@ body.autonomous-on #auto-delegate {
   }
 
   .agents-list {
-    max-height: 36vh;
+    max-height: 34vh;
     overflow: auto;
   }
 
   .kanban {
-    min-height: 420px;
-    grid-template-columns: repeat(5, minmax(86vw, 86vw));
+    min-height: 0;
+    grid-template-columns: repeat(4, minmax(72vw, 72vw));
     scroll-snap-type: x mandatory;
-    padding-bottom: 10px;
+    padding-bottom: 8px;
     -webkit-overflow-scrolling: touch;
   }
 
   .column {
     scroll-snap-align: start;
+    min-height: auto;
   }
 
   .queue-meta {
     flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 900px) {
+  .kanban {
+    grid-template-columns: 1fr;
+    overflow-x: visible;
+    scroll-snap-type: none;
+  }
+
+  .board-filters {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    overflow: visible;
+  }
+
+  .board-filters .chip {
+    min-height: 40px;
+    white-space: normal;
+    text-align: center;
+    line-height: 1.25;
   }
 }
 
@@ -872,13 +896,22 @@ body.autonomous-on #auto-delegate {
     padding: 10px;
   }
 
+  .topbar {
+    top: 6px;
+    gap: 7px;
+  }
+
+  .brand {
+    gap: 8px;
+  }
+
   .brand h1 {
     font-size: 11px;
   }
 
   .metrics {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
+    gap: 6px;
   }
 
   .metric strong {
@@ -890,21 +923,28 @@ body.autonomous-on #auto-delegate {
   }
 
   .tabs {
-    overflow-x: auto;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 6px;
-    padding-bottom: 2px;
+    padding-bottom: 0;
   }
 
   .tab,
   .chip {
     white-space: nowrap;
     font-size: 12px;
-    padding: 9px 10px;
+    padding: 10px 8px;
+    min-height: 40px;
+  }
+
+  .tabs .tab {
+    text-align: center;
   }
 
   .header-icon-btn {
-    width: 30px;
-    height: 30px;
+    width: 40px;
+    height: 40px;
+    justify-self: stretch;
   }
 
   .queue-meta {
@@ -923,7 +963,7 @@ body.autonomous-on #auto-delegate {
 
   .board-filters {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
     overflow: visible;
     padding-bottom: 0;
@@ -931,6 +971,9 @@ body.autonomous-on #auto-delegate {
 
   .board-filters .chip {
     text-align: center;
+    min-height: 42px;
+    white-space: normal;
+    line-height: 1.25;
   }
 
   /* mobile real: colunas empilhadas (sem carrossel horizontal) */
