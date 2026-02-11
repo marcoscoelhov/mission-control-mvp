@@ -868,17 +868,20 @@ body.autonomous-on #auto-delegate {
   }
 
   .board-filters {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    display: flex;
+    flex-wrap: nowrap;
     gap: 6px;
-    overflow: visible;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    -webkit-overflow-scrolling: touch;
   }
 
   .board-filters .chip {
-    min-height: 40px;
-    white-space: normal;
+    flex: 0 0 auto;
+    min-height: 38px;
+    white-space: nowrap;
     text-align: center;
-    line-height: 1.25;
+    line-height: 1.2;
   }
 }
 
@@ -1041,6 +1044,211 @@ body.autonomous-on #auto-delegate {
   }
 }
 
+
+@media (max-width: 768px) {
+  .bg-orb {
+    display: none;
+  }
+
+  .app-shell {
+    width: 100%;
+    margin: 0;
+    padding: 8px;
+    gap: 8px;
+  }
+
+  .glass {
+    background: rgba(20, 24, 34, 0.9);
+    border-color: rgba(255, 255, 255, 0.09);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.24);
+    backdrop-filter: blur(4px);
+  }
+
+  .topbar {
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    top: 6px;
+  }
+
+  .brand h1 {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+  }
+
+  .metrics {
+    display: none;
+  }
+
+  .tabs {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  .tabs .tab:nth-child(1),
+  .tabs .tab:nth-child(4),
+  .tabs #toggle-live {
+    display: none;
+  }
+
+  .tabs .tab,
+  .tabs .header-icon-btn {
+    min-height: 34px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    font-size: 11px;
+  }
+
+  .tabs .header-icon-btn {
+    width: 34px;
+    height: 34px;
+    padding: 0;
+  }
+
+  .workspace,
+  .workspace.live-collapsed {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .board-panel {
+    order: 1;
+    padding: 10px;
+    border-radius: 10px;
+    gap: 8px;
+  }
+
+  .agents-panel,
+  .live-panel {
+    display: none;
+  }
+
+  .panel-head {
+    padding: 2px 0 8px;
+  }
+
+  .panel-head h2 {
+    font-size: 12px;
+    letter-spacing: 0.07em;
+  }
+
+  .queue-meta {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin-left: auto;
+  }
+
+  .queue-meta .pill,
+  .queue-meta .muted,
+  .queue-meta #auto-delegate {
+    display: none;
+  }
+
+  .queue-meta #inbox-chip {
+    min-height: 32px;
+    padding: 6px 9px;
+    font-size: 11px;
+  }
+
+  .board-filters {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 6px;
+    padding: 0 0 2px;
+    margin: 0;
+  }
+
+  .board-filters .chip {
+    flex: 0 0 auto;
+    min-height: 34px;
+    padding: 6px 10px;
+    font-size: 11px;
+    border-radius: 8px;
+  }
+
+  .kanban {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    min-height: 0;
+    overflow: visible;
+    padding-bottom: 2px;
+  }
+
+  .column {
+    border-radius: 10px;
+    border-color: rgba(255, 255, 255, 0.08);
+    background: rgba(10, 12, 18, 0.55);
+  }
+
+  .column-head {
+    padding: 8px;
+    font-size: 10px;
+    letter-spacing: 0.07em;
+  }
+
+  .cards {
+    min-height: 0;
+    gap: 6px;
+    padding: 0 8px 8px;
+  }
+
+  .empty-column {
+    padding: 7px 8px;
+    border-radius: 8px;
+    font-size: 10px;
+  }
+
+  .card {
+    padding: 8px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-left: 1px solid rgba(126, 249, 207, 0.2);
+    background: rgba(16, 20, 29, 0.92);
+  }
+
+  .card h3 {
+    margin-bottom: 4px;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .card p {
+    margin-bottom: 7px;
+    font-size: 11px;
+    line-height: 1.42;
+  }
+
+  .score-row {
+    gap: 4px;
+    margin-bottom: 6px;
+  }
+
+  .score-pill {
+    font-size: 10px;
+    padding: 2px 6px;
+  }
+
+  .approve-row,
+  .card-actions {
+    margin-top: 6px;
+    gap: 5px;
+  }
+
+  .toast-wrap {
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+  }
+}
 
 .brand-icon {
   display: inline-block;
