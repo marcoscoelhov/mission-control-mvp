@@ -1212,6 +1212,7 @@ function setupUI() {
   toggleLive.addEventListener('click', () => {
     const isCollapsed = livePanel.classList.toggle('collapsed');
     workspace.classList.toggle('live-collapsed', isCollapsed);
+    toggleLive.setAttribute('aria-label', isCollapsed ? 'Abrir Live' : 'Fechar Live');
     if (!isCollapsed) setLiveTab('history');
   });
 

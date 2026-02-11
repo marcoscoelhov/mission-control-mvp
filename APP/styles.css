@@ -1110,8 +1110,7 @@ body.autonomous-on #auto-delegate {
   }
 
   .tabs .tab:nth-child(1),
-  .tabs .tab:nth-child(4),
-  .tabs #toggle-live {
+  .tabs .tab:nth-child(4) {
     display: none;
   }
 
@@ -1142,9 +1141,45 @@ body.autonomous-on #auto-delegate {
     gap: 8px;
   }
 
-  .agents-panel,
-  .live-panel {
+  .agents-panel {
     display: none;
+  }
+
+  /* Mobile Live = bottom sheet (visual tracking of missions advancing) */
+  .live-panel {
+    display: block;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100vw;
+    max-height: 78vh;
+    padding: 12px;
+    border-radius: 14px 14px 0 0;
+    z-index: 80;
+    transform: translateY(110%);
+    transition: transform 0.28s ease;
+  }
+
+  .live-panel:not(.collapsed) {
+    transform: translateY(0);
+  }
+
+  .live-panel .live-feed {
+    max-height: 34vh;
+    overflow: auto;
+  }
+
+  .live-panel .agent-details {
+    max-height: 54vh;
+    overflow: auto;
+  }
+
+  .live-panel .panel-head {
+    position: sticky;
+    top: 0;
+    background: transparent;
+    padding-bottom: 6px;
   }
 
   .panel-head {
