@@ -1067,10 +1067,10 @@ body.autonomous-on #auto-delegate {
   .topbar {
     grid-template-columns: 1fr auto;
     align-items: center;
-    gap: 8px;
-    padding: 8px 10px;
+    gap: 6px;
+    padding: 6px 8px;
     border-radius: 10px;
-    top: 6px;
+    top: 4px;
   }
 
   .brand h1 {
@@ -1086,7 +1086,7 @@ body.autonomous-on #auto-delegate {
     display: flex;
     align-items: center;
     justify-content: flex-end;
-    gap: 6px;
+    gap: 4px;
     overflow-x: auto;
     white-space: nowrap;
   }
@@ -1099,15 +1099,15 @@ body.autonomous-on #auto-delegate {
 
   .tabs .tab,
   .tabs .header-icon-btn {
-    min-height: 34px;
-    padding: 6px 10px;
+    min-height: 32px;
+    padding: 5px 8px;
     border-radius: 8px;
     font-size: 11px;
   }
 
   .tabs .header-icon-btn {
-    width: 34px;
-    height: 34px;
+    width: 32px;
+    height: 32px;
     padding: 0;
   }
 
@@ -1164,6 +1164,12 @@ body.autonomous-on #auto-delegate {
     gap: 6px;
     padding: 0 0 2px;
     margin: 0;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .board-filters::-webkit-scrollbar {
+    display: none;
   }
 
   .board-filters .chip {
@@ -1187,6 +1193,13 @@ body.autonomous-on #auto-delegate {
     border-radius: 10px;
     border-color: rgba(255, 255, 255, 0.08);
     background: rgba(10, 12, 18, 0.55);
+  }
+
+  .column.is-empty[data-column="assigned"],
+  .column.is-empty[data-column="in_progress"],
+  .column.is-empty[data-column="review"],
+  .column.is-empty[data-column="failed"] {
+    display: none;
   }
 
   .column-head {

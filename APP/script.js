@@ -844,7 +844,29 @@ function renderBoard(columns) {
 
   kanban.innerHTML = '';
 
-  const visibleColumns = columns.filter((c) => normalizeColumnKey(c.name) !== 'inbox');
+  const baseColumns = columns.filter((c) => normalizeColumnKey(c.name) !== 'inbox');
+  const isMobile = window.matchMedia('(max-width: 768px)').matches;
+  const mobilePriority = {
+    done: 0,
+    in_progress: 1,
+    assigned: 2,
+    review: 3,
+    failed: 4,
+  };
+
+  const visibleColumns = isMobile
+    ? [...baseColumns].sort((a, b) => {
+        const ak = normalizeColumnKey(a.name);
+        const bk = normalizeColumnKey(b.name);
+        const aCount = Array.isArray(a.items) ? a.items.length : 0;
+        const bCount = Array.isArray(b.items) ? b.items.length : 0;
+        if ((aCount > 0) !== (bCount > 0)) return aCount > 0 ? -1 : 1;
+        const ap = mobilePriority[ak] ?? 99;
+        const bp = mobilePriority[bk] ?? 99;
+        if (ap !== bp) return ap - bp;
+        return 0;
+      })
+    : baseColumns;
 
   visibleColumns.forEach((col) => {
     const column = document.createElement('section');
@@ -856,6 +878,7 @@ function renderBoard(columns) {
 
     const columnKey = normalizeColumnKey(col.name);
     const normalized = (col.items || []).map(normalizeCard).sort((a, b) => priorityScore(b) - priorityScore(a));
+    if (!normalized.length) column.classList.add('is-empty');
     normalized.forEach((item) => cards.appendChild(createCard(item, columnKey)));
     if (!normalized.length) {
       const empty = document.createElement('div');
