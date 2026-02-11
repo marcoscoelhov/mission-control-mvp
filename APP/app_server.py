@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
+import os
 import json
 import subprocess
 import time
@@ -10,11 +11,15 @@ from pathlib import Path
 
 BASE = Path(__file__).resolve().parent
 DATA_FILE = BASE / 'data.json'
+DATA_SEED_FILE = BASE / 'data.sample.json'
 TRAIL_FILE = BASE / 'MISSOES_TRAJETO.md'
 MISSION_FILE = BASE / 'MISSAO.md'
 CHAT_FILE = BASE / 'agent-chat.json'
-WHATSAPP_TARGETS = ['556699819658', '5566999819658']
-WHATSAPP_CLARIFY_ENABLED = False  # default off to avoid spam; enable only when explicitly needed
+
+# External messaging must be explicitly enabled and configured via env.
+# Example: WHATSAPP_TARGETS="5566... , 5566..." WHATSAPP_CLARIFY_ENABLED=1
+WHATSAPP_TARGETS = [x.strip() for x in (os.getenv('WHATSAPP_TARGETS') or '').split(',') if x.strip()]
+WHATSAPP_CLARIFY_ENABLED = os.getenv('WHATSAPP_CLARIFY_ENABLED', '').strip() in ('1', 'true', 'yes', 'on')
 
 DEFAULT_DATA = {
     'agents': [],
@@ -137,14 +142,23 @@ def ask_whatsapp_clarification(mission, reason):
 
 
 def load_data():
+    # If no local state exists yet, optionally seed from a sample file (kept in repo).
+    if not DATA_FILE.exists() and DATA_SEED_FILE.exists():
+        try:
+            DATA_FILE.write_text(DATA_SEED_FILE.read_text(encoding='utf-8'), encoding='utf-8')
+        except Exception:
+            pass
+
     if not DATA_FILE.exists():
         data = json.loads(json.dumps(DEFAULT_DATA))
         remove_needs_clarification_column(data)
         return data
+
     try:
         data = json.loads(DATA_FILE.read_text(encoding='utf-8'))
     except Exception:
         data = json.loads(json.dumps(DEFAULT_DATA))
+
     remove_needs_clarification_column(data)
     return data
 
@@ -764,6 +778,12 @@ class Handler(SimpleHTTPRequestHandler):
             })
         if path == '/api/openclaw/agents/details':
             details = BASE / 'openclaw-agents-details.json'
+            if not details.exists():
+                # Best-effort generation so fresh clones still work.
+                try:
+                    subprocess.run(['python3', str(BASE / 'sync_openclaw_agents.py')], timeout=12)
+                except Exception:
+                    pass
             if details.exists():
                 try:
                     return self._json(200, json.loads(details.read_text(encoding='utf-8')))

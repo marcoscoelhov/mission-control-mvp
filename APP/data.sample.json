@@ -1,0 +1,18 @@
+{
+  "agents": [],
+  "columns": [
+    {"name": "Inbox", "items": []},
+    {"name": "Assigned", "items": []},
+    {"name": "In Progress", "items": []},
+    {"name": "Review", "items": []},
+    {"name": "Done", "items": []},
+    {"name": "Failed", "items": []}
+  ],
+  "feed": [],
+  "autonomous": false,
+  "missionIndex": {},
+  "auditTrail": [],
+  "transitionKeys": {},
+  "telemetryCache": {"updatedAt": 0, "payload": {}},
+  "taskSeq": 0
+}

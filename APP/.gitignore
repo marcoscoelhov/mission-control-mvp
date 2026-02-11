@@ -1,2 +1,9 @@
 __pycache__/
 *.pyc
+
+# Generated/local state (ignored; see repo root .gitignore)
+data.json
+MISSOES_TRAJETO.md
+openclaw-agents-details.json
+agent-chat.json
+*.log
