@@ -564,7 +564,18 @@ def build_openclaw_telemetry(data):
         sid = str(s.get('id') or s.get('sessionId') or '')
         title = str(s.get('title') or s.get('name') or sid or 'session')
         updated = int(s.get('updatedAt') or s.get('lastActivityAt') or s.get('createdAt') or 0)
-        owner_raw = str(s.get('agent') or s.get('agentId') or s.get('owner') or '').strip() or 'unknown'
+
+        # openclaw sessions output is key-based (e.g. "agent:main:cron:..."), so infer agentId from it.
+        key = str(s.get('key') or '').strip()
+        inferred = ''
+        if key.startswith('agent:'):
+            parts = key.split(':')
+            if len(parts) >= 2:
+                inferred = parts[1]
+
+        owner_raw = str(
+            s.get('agent') or s.get('agentId') or s.get('owner') or inferred or ''
+        ).strip() or 'unknown'
         owner = owner_raw.lower()
 
         bucket = agents.setdefault(owner, {

@@ -156,6 +156,24 @@ body {
   border-color: rgba(255, 217, 128, 0.38);
 }
 
+.chip.warning #failed-count {
+  display: inline-block;
+  min-width: 18px;
+  padding: 1px 6px;
+  margin-left: 6px;
+  border-radius: 999px;
+  background: rgba(255, 217, 128, 0.14);
+  border: 1px solid rgba(255, 217, 128, 0.28);
+  font-weight: 700;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.chip.warning.has-failures {
+  background: rgba(255, 217, 128, 0.08);
+  box-shadow: 0 0 0 1px rgba(255, 217, 128, 0.12) inset;
+}
+
 .workspace {
   display: grid;
   gap: 12px;

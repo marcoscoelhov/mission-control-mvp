@@ -19,6 +19,8 @@ const liveToolbar = document.getElementById('live-toolbar');
 const countEl = document.querySelector('.agents-panel .count');
 const autoDelegateBtn = document.getElementById('auto-delegate');
 const inboxChip = document.getElementById('inbox-chip');
+const failedBell = document.getElementById('failed-bell');
+const failedCountEl = document.getElementById('failed-count');
 const openBroadcastBtn = document.getElementById('open-broadcast');
 const broadcastDrawer = document.getElementById('broadcast-drawer');
 const closeBroadcastBtn = document.getElementById('close-broadcast');
@@ -66,6 +68,7 @@ let activityLog = [];
 let executionsWindow = [];
 let selectedMissionKey = 'system';
 let telemetryState = { agents: [], summary: { activeSessions: 0 } };
+let showFailedOnly = false;
 
 const normalizeColumnKey = (name = '') => name.toLowerCase().trim().replace(/\s+/g, '_');
 const prettyColumn = (key = '') => key.replaceAll('_', ' ').replace(/\b\w/g, (m) => m.toUpperCase());
@@ -836,6 +839,16 @@ function updateAllCounts() {
   });
 }
 
+function refreshFailedBell() {
+  if (!failedBell || !failedCountEl) return;
+  const failed = getColumn('failed')?.items || [];
+  const n = Array.isArray(failed) ? failed.length : 0;
+  failedCountEl.textContent = String(n);
+  failedBell.classList.toggle('has-failures', n > 0);
+  failedBell.style.display = (n > 0 || showFailedOnly) ? 'inline-flex' : 'none';
+  failedBell.title = showFailedOnly ? 'Voltar ao board' : 'Ver falhas (clique para ver/ocultar)';
+}
+
 function renderBoard(columns) {
   boardState = columns.map((c) => ({ name: c.name, items: [...(c.items || [])] }));
   const inboxColumn = boardState.find((c) => normalizeColumnKey(c.name) === 'inbox');
@@ -844,7 +857,6 @@ function renderBoard(columns) {
 
   kanban.innerHTML = '';
 
-  const baseColumns = columns.filter((c) => normalizeColumnKey(c.name) !== 'inbox');
   const isMobile = window.matchMedia('(max-width: 768px)').matches;
   const mobilePriority = {
     done: 0,
@@ -853,6 +865,13 @@ function renderBoard(columns) {
     review: 3,
     failed: 4,
   };
+
+  refreshFailedBell();
+
+  const failedColumn = columns.find((c) => normalizeColumnKey(c.name) === 'failed');
+  const baseColumns = showFailedOnly
+    ? (failedColumn ? [failedColumn] : [])
+    : columns.filter((c) => !['inbox', 'failed'].includes(normalizeColumnKey(c.name)));
 
   const visibleColumns = isMobile
     ? [...baseColumns].sort((a, b) => {
@@ -1206,6 +1225,12 @@ function setupUI() {
   inboxChip?.addEventListener('click', () => {
     broadcastDrawer.classList.add('open');
     settingsDrawer.classList.remove('open');
+  });
+
+  failedBell?.addEventListener('click', () => {
+    showFailedOnly = !showFailedOnly;
+    showToast(showFailedOnly ? 'Exibindo apenas falhas (🔔).' : 'Voltando ao board.');
+    renderBoard(boardState);
   });
 
   openBroadcastBtn?.addEventListener('click', () => {
