@@ -76,6 +76,9 @@ let boardFilter = localStorage.getItem('mc_board_filter') || 'all';
 
 let lastMissionColumn = {};
 let lastTransitionBurstAt = 0;
+
+let lastSeenTransitionTs = Number(localStorage.getItem('mc_last_transition_ts') || 0);
+let seenTransitionIds = new Set();
 let mobileStageCollapsed = (() => {
   try { return JSON.parse(localStorage.getItem('mc_mobile_stage_collapsed') || '{}'); } catch (_) { return {}; }
 })();
@@ -228,6 +231,40 @@ function detectAndLogTransitions(columns) {
   }
 }
 
+function ingestDashboardTransitions(dashboard) {
+  const cols = dashboard?.columns || [];
+  let maxTs = lastSeenTransitionTs;
+
+  (cols || []).forEach((col) => {
+    const toKey = normalizeColumnKey(col.name || '');
+    (col.items || []).forEach((m) => {
+      const c = normalizeCard(m);
+      const lt = c.latestTransition;
+      if (!lt || !lt.id) return;
+      const ts = Number(lt.timestamp || 0);
+      if (!ts) return;
+      maxTs = Math.max(maxTs, ts);
+      if (ts <= lastSeenTransitionTs) return;
+      if (seenTransitionIds.has(lt.id)) return;
+      seenTransitionIds.add(lt.id);
+
+      const from = normalizeColumnKey(lt.from || '?');
+      const to = normalizeColumnKey(lt.to || toKey);
+      const actor = lt.actor || 'system';
+      const reason = lt.reason || 'update';
+      addLiveEvent('Fluxo', `${c.title}: ${prettyColumn(from)} → ${prettyColumn(to)} (${actor})`, true, {
+        missionKey: c.id,
+        missionTitle: c.title,
+      });
+    });
+  });
+
+  if (maxTs > lastSeenTransitionTs) {
+    lastSeenTransitionTs = maxTs;
+    localStorage.setItem('mc_last_transition_ts', String(lastSeenTransitionTs));
+  }
+}
+
 function pulseFlow() {
   kanban.classList.remove('flow-active');
   void kanban.offsetWidth;
@@ -235,9 +272,52 @@ function pulseFlow() {
   setTimeout(() => kanban.classList.remove('flow-active'), 1300);
 }
 
-function renderMissionHistory(key) {
+async function renderMissionHistory(key) {
   if (!missionHistoryView) return;
-  const logs = activityLog.filter((e) => (e.missionKey || 'system') === key);
+  const missionId = String(key || '').trim();
+  if (!missionId || missionId === 'system') {
+    missionHistoryView.textContent = 'Selecione uma missão para ver o trajeto completo.';
+    return;
+  }
+
+  // Prefer backend timeline (source of truth).
+  try {
+    const res = await fetchJson(`/api/missions/${encodeURIComponent(missionId)}/timeline`);
+    const tl = Array.isArray(res?.timeline) ? res.timeline : [];
+    const proof = res?.executionProof || {};
+
+    const header = [];
+    const status = proof.status ? String(proof.status) : '—';
+    const ev = Array.isArray(proof.evidence) ? proof.evidence : [];
+    header.push(`PROOF: ${status} | evidências: ${ev.length}`);
+    if (proof.agent) header.push(`AGENTE: ${proof.agent}`);
+    if (proof.sessionId) header.push(`SESSION: ${proof.sessionId}`);
+
+    if (!tl.length) {
+      missionHistoryView.textContent = `${header.join(' · ')}\n\nSem transições registradas ainda.`;
+      return;
+    }
+
+    const lines = tl
+      .slice()
+      .reverse()
+      .slice(0, 40)
+      .map((e) => {
+        const at = new Date(Number(e.timestamp || 0)).toLocaleString('pt-BR');
+        const from = prettyColumn(normalizeColumnKey(e.from || '?'));
+        const to = prettyColumn(normalizeColumnKey(e.to || '?'));
+        const actor = e.actor || 'system';
+        const reason = e.reason || 'update';
+        return `- [${at}] ${from} → ${to} (${actor}/${reason})`;
+      });
+
+    missionHistoryView.textContent = `${header.join(' · ')}\n\n${lines.join('\n')}`;
+    return;
+  } catch (_) {
+    // Fallback to local log
+  }
+
+  const logs = activityLog.filter((e) => (e.missionKey || 'system') === missionId);
   if (!logs.length) {
     missionHistoryView.textContent = 'Sem eventos para esta missão.';
     return;
@@ -273,22 +353,22 @@ function renderLiveFeed() {
     const item = document.createElement('article');
     item.className = `feed-item ${key === selectedMissionKey ? 'active' : ''}`;
     item.innerHTML = `<strong>${escapeHtml(ev.missionTitle || ev.title)}</strong><p>${escapeHtml(ev.message)}</p>`;
-    item.addEventListener('click', () => {
+    item.addEventListener('click', async () => {
       selectedMissionKey = key;
       renderLiveFeed();
-      renderMissionHistory(key);
+      await renderMissionHistory(key);
     });
     liveFeed.appendChild(item);
   });
 
-  renderMissionHistory(selectedMissionKey);
+  void renderMissionHistory(selectedMissionKey);
 }
 
 function addLiveEvent(title, message, emphasize = false, meta = {}) {
   const time = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   const missionKey = meta.missionKey || 'system';
   const missionTitle = meta.missionTitle || null;
-  activityLog.unshift({ title, missionTitle, missionKey, message: `${message} • ${time}` });
+  activityLog.unshift({ title, missionTitle, missionKey, message: `${message} • ${time}`, at: Date.now() });
   activityLog = activityLog.slice(0, 200);
   renderLiveFeed();
   if (emphasize) {
@@ -343,7 +423,10 @@ function normalizeCard(item) {
     const [title, desc, owner, eta] = item;
     return {
       cardId: makeCardId(title),
+      id: makeCardId(title),
       title,
+      rawTitle: title,
+      requestedTitle: '',
       desc,
       owner,
       eta,
@@ -368,10 +451,18 @@ function normalizeCard(item) {
       },
     };
   }
+
+  const id = item.id || item.missionId || item.cardId || makeMissionId();
+  const rawTitle = item.title || 'Sem título';
+  const requestedTitle = item.requestedTitle || '';
+  const displayTitle = (requestedTitle && String(rawTitle).startsWith('#task_')) ? requestedTitle : rawTitle;
+
   return {
-    id: item.id || item.missionId || item.cardId || makeMissionId(),
-    cardId: item.id || item.missionId || item.cardId || makeMissionId(),
-    title: item.title || 'Sem título',
+    id,
+    cardId: id,
+    title: displayTitle,
+    rawTitle,
+    requestedTitle,
     desc: item.desc || '',
     owner: item.owner || 'Stark',
     eta: item.eta || '0m',
@@ -390,6 +481,8 @@ function normalizeCard(item) {
     clarificationAsked: Boolean(item.clarificationAsked),
     clarificationAnswer: item.clarificationAnswer || '',
     sessionId: item.sessionId || item.execution?.sessionId || '',
+    latestTransition: item.latestTransition || null,
+    timelineCount: Number(item.timelineCount || 0),
     execution: item.execution || {
       sessionId: item.sessionId || '',
       agent: item.owner || 'Stark',
@@ -428,8 +521,15 @@ async function fetchText(url) {
 }
 
 async function loadDashboard() {
-  try { const d = await fetchJson('/api/dashboard'); if (Array.isArray(d?.columns)) return d; } catch (_) {}
-  try { return await fetchJson('./data.json'); } catch (_) { return fallbackData; }
+  try {
+    const d = await fetchJson('/api/dashboard');
+    if (Array.isArray(d?.columns)) return d;
+  } catch (_) {}
+  try {
+    return await fetchJson('./data.json');
+  } catch (_) {
+    return fallbackData;
+  }
 }
 
 async function loadAgentsDetails() {
@@ -953,13 +1053,13 @@ function createCard(item, columnKey = '') {
     });
   });
 
-  card.addEventListener('click', () => {
+  card.addEventListener('click', async () => {
     if (!isMobile) return;
     // Mobile: tap selects mission + toggles compact/expanded view.
     selectedMissionKey = card.dataset.cardId || selectedMissionKey;
     card.classList.toggle('expanded');
     renderLiveFeed();
-    renderMissionHistory(selectedMissionKey);
+    await renderMissionHistory(selectedMissionKey);
     // Keep a visible "peek" of Live; user can expand fully via button.
   });
 
@@ -1415,6 +1515,13 @@ function setLiveTab(tab) {
 function startRealtimeRefresh() {
   if (refreshTimer) clearInterval(refreshTimer);
   refreshTimer = setInterval(async () => {
+    // Avoid refreshing while dragging on desktop.
+    if (draggedCard) return;
+
+    const dashboard = await loadDashboard();
+    ingestDashboardTransitions(dashboard);
+    renderBoard(dashboard.columns || fallbackData.columns);
+
     const [agents] = await Promise.all([loadAgentsDetails(), loadTelemetry()]);
     if (agents.length) renderAgents(agents);
     if (chatDrawer?.classList.contains('open')) await refreshAgentChat();
