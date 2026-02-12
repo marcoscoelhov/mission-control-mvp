@@ -11,6 +11,7 @@ from urllib.parse import urlparse, unquote
 from pathlib import Path
 
 BASE = Path(__file__).resolve().parent
+REPO_ROOT = BASE.parent  # /root/.openclaw/workspace-stark
 DATA_FILE = BASE / 'data.json'
 DATA_SEED_FILE = BASE / 'data.sample.json'
 TRAIL_FILE = BASE / 'MISSOES_TRAJETO.md'
@@ -84,6 +85,26 @@ def mission_openclaw_text(mission):
         f"[MISSION CONTROL] Missão: {title} | missionId={mission_id} | Responsável: {owner}. "
         f"Contexto: {desc}. {guard}"
     )
+
+
+def run_cmd(cmd, timeout_seconds=10, cwd=None):
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_seconds, cwd=cwd)
+        out = (r.stdout or '').strip()
+        err = (r.stderr or '').strip()
+        return {'ok': r.returncode == 0, 'rc': r.returncode, 'out': out, 'err': err}
+    except Exception as e:
+        return {'ok': False, 'rc': 1, 'out': '', 'err': str(e)}
+
+
+def git_snapshot():
+    # Snapshot repo dirty state (for evidence criterion C: file altered + diff)
+    st = run_cmd(['git', '-C', str(REPO_ROOT), 'status', '--porcelain'], timeout_seconds=6)
+    ds = run_cmd(['git', '-C', str(REPO_ROOT), 'diff', '--stat'], timeout_seconds=6)
+    return {
+        'status': st.get('out', ''),
+        'diffstat': ds.get('out', ''),
+    }
 
 
 def run_openclaw_agent_sync(agent_id, session_id, message_text, timeout_seconds=240):
@@ -1064,10 +1085,25 @@ class Handler(SimpleHTTPRequestHandler):
             msg = mission_openclaw_text(mission)
 
             def worker():
+                before_git = git_snapshot()
                 try:
                     result = run_openclaw_agent_sync(agent_id=agent_id, session_id=mission_id, message_text=msg)
                 except Exception as e:
                     result = {'ok': False, 'evidence': [f'runner_error: {e}'], 'reply': ''}
+                after_git = git_snapshot()
+
+                # Evidence criterion C: must alter files + have a diff.
+                changed = (after_git.get('status') or '').strip() != (before_git.get('status') or '').strip()
+                has_diff = bool((after_git.get('diffstat') or '').strip())
+                c_ok = changed and has_diff
+
+                git_evidence = []
+                if changed:
+                    git_evidence.append('git: changes detected')
+                if has_diff:
+                    git_evidence.append('git diff --stat:\n' + after_git.get('diffstat', '')[:900])
+                else:
+                    git_evidence.append('git: no diff detected')
 
                 data2 = load_data()
                 col2, idx2, mission2 = find_mission_ref(data2, mission_id)
@@ -1079,16 +1115,23 @@ class Handler(SimpleHTTPRequestHandler):
                 ex2['sessionId'] = mission_id
                 ex2['updatedAt'] = now_ms()
                 ex2['endedAt'] = now_ms()
-                ex2['status'] = 'effective' if result.get('ok') else 'failed'
 
-                evidence = list(dict.fromkeys((ex2.get('evidence') or []) + (result.get('evidence') or [])))
+                base_ok = bool(result.get('ok'))
+                final_ok = base_ok and c_ok
+                ex2['status'] = 'effective' if final_ok else 'failed'
+
+                evidence = list(dict.fromkeys((ex2.get('evidence') or []) + (result.get('evidence') or []) + git_evidence))
                 ex2['evidence'] = evidence
                 mission2['execution'] = ex2
                 mission2['executionStatus'] = ex2['status']
                 mission2['effectEvidence'] = evidence
                 mission2['effective'] = has_execution_proof(mission2)
                 mission2['needsEffectiveness'] = not mission2['effective']
-                mission2['needsUserAction'] = '' if mission2['effective'] else 'Execução não confirmou efetividade. Ver evidências e reexecutar.'
+
+                if mission2['effective']:
+                    mission2['needsUserAction'] = ''
+                else:
+                    mission2['needsUserAction'] = 'Critério C não atendido: precisa alterar arquivos e gerar diff (git).'
 
                 if col2 is not None and idx2 is not None:
                     col2['items'][idx2] = mission2
