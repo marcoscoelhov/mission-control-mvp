@@ -994,6 +994,19 @@ class Handler(SimpleHTTPRequestHandler):
             payload = build_openclaw_telemetry(data)
             save_data(data)
             return self._json(200, payload)
+
+        if path.startswith('/api/docs/'):
+            name = unquote(path[len('/api/docs/'):]).strip('/')
+            safe = ''.join([c for c in name if c.isalnum() or c in ('-', '_', '.')])
+            if not safe:
+                return self._json(400, {'ok': False, 'error': 'bad_doc'})
+            doc = BASE / 'docs' / safe
+            if doc.exists() and doc.is_file():
+                try:
+                    return self._json(200, {'ok': True, 'name': safe, 'content': doc.read_text(encoding='utf-8', errors='ignore')})
+                except Exception:
+                    return self._json(500, {'ok': False, 'error': 'read_failed'})
+            return self._json(404, {'ok': False, 'error': 'not_found'})
         if path.startswith('/api/missions/') and path.endswith('/timeline'):
             mission_id = unquote(path[len('/api/missions/'): -len('/timeline')]).strip('/')
             if not mission_id:
