@@ -6,6 +6,7 @@ import subprocess
 import time
 import uuid
 import hashlib
+import threading
 from urllib.parse import urlparse, unquote
 from pathlib import Path
 
@@ -86,10 +87,10 @@ def mission_openclaw_text(mission):
 
 
 def run_openclaw_agent_sync(agent_id, session_id, message_text, timeout_seconds=240):
-    """Run an OpenClaw agent synchronously and capture output as evidence.
+    """Run an OpenClaw agent and capture output as evidence.
 
-    IMPORTANT: Uses an explicit session id so we don't reuse the agent's main chat
-    (which may be huge and slow)."""
+    Uses a dedicated session id to avoid huge contexts.
+    Uses Popen+communicate so we can hard-kill on timeout."""
     cmd = [
         'openclaw', 'agent',
         '--agent', str(agent_id),
@@ -99,10 +100,26 @@ def run_openclaw_agent_sync(agent_id, session_id, message_text, timeout_seconds=
         '--timeout', str(int(timeout_seconds)),
         '--json'
     ]
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=int(timeout_seconds) + 20)
 
-    stdout = (r.stdout or '').strip()
-    stderr = (r.stderr or '').strip()
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        stdout, stderr = p.communicate(timeout=int(timeout_seconds) + 25)
+    except subprocess.TimeoutExpired:
+        try:
+            p.kill()
+        except Exception:
+            pass
+        return {
+            'ok': False,
+            'returncode': 124,
+            'reply': '',
+            'stderr': 'timeout',
+            'evidence': ['runner_timeout'],
+        }
+
+    rc = p.returncode
+    stdout = (stdout or '').strip()
+    stderr = (stderr or '').strip()
 
     parsed = None
     reply_text = ''
@@ -113,13 +130,11 @@ def run_openclaw_agent_sync(agent_id, session_id, message_text, timeout_seconds=
             parsed = None
 
     if isinstance(parsed, dict):
-        # best-effort: different versions may use different keys
         for k in ['reply', 'text', 'message', 'output', 'content']:
             if isinstance(parsed.get(k), str) and parsed.get(k).strip():
                 reply_text = parsed.get(k).strip()
                 break
         if not reply_text:
-            # sometimes nested
             for k in ['result', 'data']:
                 v = parsed.get(k)
                 if isinstance(v, dict):
@@ -130,7 +145,7 @@ def run_openclaw_agent_sync(agent_id, session_id, message_text, timeout_seconds=
     else:
         reply_text = stdout
 
-    ok = (r.returncode == 0)
+    ok = (rc == 0)
     evidence = []
     if reply_text:
         evidence.append(('LLM: ' + reply_text.replace('\n', ' ')[:900]).strip())
@@ -139,7 +154,7 @@ def run_openclaw_agent_sync(agent_id, session_id, message_text, timeout_seconds=
 
     return {
         'ok': ok,
-        'returncode': r.returncode,
+        'returncode': rc,
         'reply': reply_text,
         'stderr': stderr,
         'evidence': evidence,
@@ -1025,7 +1040,7 @@ class Handler(SimpleHTTPRequestHandler):
             if mission is None:
                 return self._json(404, {'ok': False, 'error': 'mission_not_found'})
 
-            # mark running
+            # mark running and return immediately (async execution)
             ex = normalize_execution(mission)
             ex['startedAt'] = now_ms()
             ex['updatedAt'] = now_ms()
@@ -1037,45 +1052,52 @@ class Handler(SimpleHTTPRequestHandler):
             mission['needsEffectiveness'] = True
             if col is not None and idx is not None:
                 col['items'][idx] = mission
-            append_trail_entry(mission_id, mission.get('title', 'Missão sem título'), 'Execução (LLM) iniciada.')
+            append_trail_entry(mission_id, mission.get('title', 'Missão sem título'), 'Execução (LLM) enfileirada (async).')
             save_data(data)
 
             owner = mission.get('owner', 'Stark')
             agent_id = owner_to_agent_id(owner)
             msg = mission_openclaw_text(mission)
 
-            try:
-                result = run_openclaw_agent_sync(agent_id=agent_id, session_id=mission_id, message_text=msg)
-            except Exception as e:
-                result = {'ok': False, 'evidence': [f'runner_error: {e}'], 'reply': ''}
+            def worker():
+                try:
+                    result = run_openclaw_agent_sync(agent_id=agent_id, session_id=mission_id, message_text=msg)
+                except Exception as e:
+                    result = {'ok': False, 'evidence': [f'runner_error: {e}'], 'reply': ''}
 
-            # persist proof
-            ex = normalize_execution(mission)
-            ex['agent'] = agent_id
-            ex['sessionId'] = mission_id
-            ex['updatedAt'] = now_ms()
-            ex['endedAt'] = now_ms()
-            ex['status'] = 'effective' if result.get('ok') else 'failed'
+                data2 = load_data()
+                col2, idx2, mission2 = find_mission_ref(data2, mission_id)
+                if mission2 is None:
+                    return
 
-            evidence = list(dict.fromkeys((ex.get('evidence') or []) + (result.get('evidence') or [])))
-            ex['evidence'] = evidence
-            mission['execution'] = ex
-            mission['executionStatus'] = ex['status']
-            mission['effectEvidence'] = evidence
-            mission['effective'] = has_execution_proof(mission)
-            mission['needsEffectiveness'] = not mission['effective']
-            mission['needsUserAction'] = '' if mission['effective'] else 'Execução não confirmou efetividade. Ver evidências e reexecutar.'
+                ex2 = normalize_execution(mission2)
+                ex2['agent'] = agent_id
+                ex2['sessionId'] = mission_id
+                ex2['updatedAt'] = now_ms()
+                ex2['endedAt'] = now_ms()
+                ex2['status'] = 'effective' if result.get('ok') else 'failed'
 
-            if col is not None and idx is not None:
-                col['items'][idx] = mission
+                evidence = list(dict.fromkeys((ex2.get('evidence') or []) + (result.get('evidence') or [])))
+                ex2['evidence'] = evidence
+                mission2['execution'] = ex2
+                mission2['executionStatus'] = ex2['status']
+                mission2['effectEvidence'] = evidence
+                mission2['effective'] = has_execution_proof(mission2)
+                mission2['needsEffectiveness'] = not mission2['effective']
+                mission2['needsUserAction'] = '' if mission2['effective'] else 'Execução não confirmou efetividade. Ver evidências e reexecutar.'
 
-            append_trail_entry(mission_id, mission.get('title', 'Missão sem título'), f"Execução (LLM) finalizada: {ex['status']} | evidências: {len(evidence)}")
-            save_data(data)
+                if col2 is not None and idx2 is not None:
+                    col2['items'][idx2] = mission2
 
-            return self._json(200, {
-                'ok': mission['effective'],
-                'status': ex['status'],
-                'evidence': evidence,
+                append_trail_entry(mission_id, mission2.get('title', 'Missão sem título'), f"Execução (LLM) finalizada: {ex2['status']} | evidências: {len(evidence)}")
+                save_data(data2)
+
+            t = threading.Thread(target=worker, daemon=True)
+            t.start()
+
+            return self._json(202, {
+                'ok': True,
+                'queued': True,
                 'missionId': mission_id,
                 'execution': ex,
             })
