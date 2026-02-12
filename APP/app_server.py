@@ -77,15 +77,109 @@ def owner_to_agent_id(owner):
     return owner_map.get(str(owner).strip().lower(), 'stark')
 
 
+def _read_text_snippet(path: Path, start: str = '', end: str = '', max_chars: int = 1400):
+    try:
+        txt = Path(path).read_text(encoding='utf-8', errors='ignore')
+    except Exception:
+        return ''
+
+    if start:
+        i = txt.find(start)
+        if i >= 0:
+            txt = txt[i:]
+    if end:
+        j = txt.find(end)
+        if j >= 0:
+            txt = txt[:j]
+
+    txt = txt.strip()
+    if len(txt) > max_chars:
+        txt = txt[:max_chars].rstrip() + '\n…(truncado)'
+    return txt
+
+
+def infer_context_area(text: str):
+    t = (text or '').lower()
+    if any(k in t for k in ['header', 'topbar', 'brand', 'mission control', 'titulo', 'título', 'métrica', 'metric', 'númer', 'numero', 'contagem', 'count']):
+        return 'topbar'
+    if any(k in t for k in ['kanban', 'board', 'coluna', 'inbox', 'assigned', 'review', 'done', 'fluxo']):
+        return 'board'
+    if any(k in t for k in ['live', 'histórico', 'historico', 'timeline', 'trajeto', 'evidência', 'evidence', 'proof']):
+        return 'live'
+    if any(k in t for k in ['agente', 'agents', 'jarvis', 'wanda', 'thanos', 'alfred', 'oráculo', 'oraculo', 'modelo', 'config']):
+        return 'agents'
+    if any(k in t for k in ['broadcast', 'comando', 'comandos', 'command']):
+        return 'broadcast'
+    if any(k in t for k in ['api', 'backend', 'server', 'endpoint', 'app_server.py']):
+        return 'backend'
+    return 'general'
+
+
+def build_context_pack(area: str, data: dict, mission: dict):
+    """Return a small context payload to help the LLM infer intent from short requests."""
+    area = (area or 'general').strip().lower()
+
+    # Board summary (always useful, keep tiny)
+    counts = {}
+    try:
+        for c in (data.get('columns') or []):
+            k = str(c.get('name') or '').strip().lower().replace(' ', '_')
+            counts[k] = len(c.get('items') or [])
+    except Exception:
+        counts = {}
+
+    parts = [
+        f"area={area}",
+        f"board_counts={json.dumps(counts, ensure_ascii=False)}",
+    ]
+
+    # Area-specific snippets
+    if area == 'topbar':
+        parts.append('index.html(topbar):\n' + _read_text_snippet(BASE / 'index.html', '<header class="topbar', '</header>', 1200))
+        parts.append('script.js(updateHeaderMetrics):\n' + _read_text_snippet(BASE / 'script.js', 'function updateHeaderMetrics()', 'function priorityScore', 1200))
+    elif area == 'board':
+        parts.append('script.js(renderBoard excerpt):\n' + _read_text_snippet(BASE / 'script.js', 'function renderBoard(', 'async function init()', 1200))
+    elif area == 'live':
+        parts.append('index.html(live panel):\n' + _read_text_snippet(BASE / 'index.html', '<aside class="panel glass live-panel', '</aside>', 1200))
+    elif area == 'agents':
+        parts.append('agents details source file (openclaw-agents-details.json) head:')
+        try:
+            p = BASE / 'openclaw-agents-details.json'
+            if p.exists():
+                raw = p.read_text(encoding='utf-8', errors='ignore')
+                parts.append(raw[:900] + ('\n…(truncado)' if len(raw) > 900 else ''))
+        except Exception:
+            pass
+    elif area == 'broadcast':
+        parts.append('index.html(broadcast drawer):\n' + _read_text_snippet(BASE / 'index.html', '<aside class="broadcast-drawer', '</aside>', 1200))
+
+    # Keep pack bounded
+    pack = '\n\n'.join([p for p in parts if p and p.strip()])
+    if len(pack) > 3600:
+        pack = pack[:3600].rstrip() + '\n…(truncado)'
+    return pack
+
+
 def mission_openclaw_text(mission):
     title = mission.get('requestedTitle') or mission.get('title') or 'Missão sem título'
     desc = mission.get('desc', '')
     owner = mission.get('owner', 'Stark')
     mission_id = mission.get('id', 'unknown')
     guard = mission_guard_prefix()
+
+    # Build a context pack to help inference on short requests.
+    try:
+        data = load_data()
+    except Exception:
+        data = {}
+    area = infer_context_area(f"{title} {desc}")
+    ctx = build_context_pack(area, data, mission)
+
     return (
-        f"[MISSION CONTROL] Missão: {title} | missionId={mission_id} | Responsável: {owner}. "
-        f"Contexto: {desc}. {guard}"
+        f"[MISSION CONTROL] Missão: {title} | missionId={mission_id} | Responsável: {owner}.\n"
+        f"Contexto: {desc}\n\n"
+        f"[CONTEXT_PACK]\n{ctx}\n[/CONTEXT_PACK]\n\n"
+        f"{guard}"
     )
 
 
