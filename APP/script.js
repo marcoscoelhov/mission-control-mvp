@@ -1304,9 +1304,16 @@ function renderBoard(columns) {
   }
 
   const failedColumn = columns.find((c) => normalizeColumnKey(c.name) === 'failed');
-  const baseColumns = showFailedOnly
-    ? (failedColumn ? [failedColumn] : [])
-    : columns.filter((c) => !['inbox', 'failed'].includes(normalizeColumnKey(c.name)));
+  const inboxColumnDesktop = columns.find((c) => normalizeColumnKey(c.name) === 'inbox');
+
+  let baseColumns = [];
+  if (showFailedOnly) {
+    baseColumns = failedColumn ? [failedColumn] : [];
+  } else if (boardFilter === 'inbox') {
+    baseColumns = inboxColumnDesktop ? [inboxColumnDesktop] : [];
+  } else {
+    baseColumns = columns.filter((c) => !['inbox', 'failed'].includes(normalizeColumnKey(c.name)));
+  }
 
   const visibleColumns = [...baseColumns];
 
@@ -1686,13 +1693,6 @@ function setupUI() {
     if (!btn) return;
     const raw = String(btn.dataset.filter || btn.textContent || '').trim().toLowerCase();
     const label = raw.split('(')[0].trim();
-
-    if (label === 'inbox') {
-      broadcastDrawer.classList.add('open');
-      settingsDrawer.classList.remove('open');
-      chatDrawer?.classList.remove('open');
-      return;
-    }
 
     showFailedOnly = false;
     boardFilter = label === 'waiting' ? 'failed' : label;
