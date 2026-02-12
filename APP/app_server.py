@@ -42,6 +42,7 @@ DEFAULT_DATA = {
     'autonomous': False,
     'missionIndex': {},
     'auditTrail': [],
+    'missionRuns': {},
     'transitionKeys': {},
     'telemetryCache': {'updatedAt': 0, 'payload': {}},
     'taskSeq': 0,
@@ -506,6 +507,8 @@ def load_data():
         data = json.loads(json.dumps(DEFAULT_DATA))
         remove_needs_clarification_column(data)
         migrate_monarca_columns(data)
+        if not isinstance(data.get('missionRuns'), dict):
+            data['missionRuns'] = {}
         return data
 
     try:
@@ -515,6 +518,9 @@ def load_data():
 
     remove_needs_clarification_column(data)
     migrate_monarca_columns(data)
+    # ensure new keys exist
+    if not isinstance(data.get('missionRuns'), dict):
+        data['missionRuns'] = {}
     return data
 
 
@@ -641,6 +647,8 @@ def normalize_execution(mission, default_agent='Stark'):
     normalized = {
         'sessionId': execution.get('sessionId') or mission.get('sessionId') or None,
         'agent': execution.get('agent') or mission.get('owner') or default_agent,
+        'tool': execution.get('tool') or mission.get('executionTool') or None,
+        'runId': execution.get('runId') or mission.get('lastRunId') or None,
         'startedAt': started,
         'endedAt': ended,
         'updatedAt': execution.get('updatedAt') or now_ms(),
@@ -860,6 +868,80 @@ def get_mission_timeline(data, mission_id):
     out = [e for e in trail if str(e.get('missionId') or '').strip() == needle]
     out.sort(key=lambda x: int(x.get('timestamp') or 0))
     return out
+
+
+def upsert_mission_run(data, mission_id: str, run_id: str, patch: dict, prepend_if_missing: bool = True):
+    """Persist per-execution activity entries.
+
+    data['missionRuns'] is a dict: { missionId: [run, run, ...] }
+    Runs are stored most-recent-first.
+    """
+    mission_id = str(mission_id or '').strip()
+    run_id = str(run_id or '').strip()
+    if not mission_id or not run_id:
+        return None
+
+    runs_by_mission = data.setdefault('missionRuns', {})
+    runs = runs_by_mission.get(mission_id)
+    if not isinstance(runs, list):
+        runs = []
+
+    idx = next((i for i, r in enumerate(runs) if str(r.get('id') or '') == run_id), None)
+    if idx is None:
+        base = {
+            'id': run_id,
+            'missionId': mission_id,
+            'tool': patch.get('tool') or 'unknown',
+            'agent': patch.get('agent') or None,
+            'sessionId': patch.get('sessionId') or None,
+            'input': patch.get('input') or '',
+            'output': patch.get('output') or '',
+            'status': patch.get('status') or 'running',
+            'startedAt': int(patch.get('startedAt') or now_ms()),
+            'endedAt': patch.get('endedAt'),
+            'durationMs': patch.get('durationMs'),
+            'evidence': patch.get('evidence') if isinstance(patch.get('evidence'), list) else [],
+            'createdAt': now_ms(),
+            'updatedAt': now_ms(),
+        }
+        if prepend_if_missing:
+            runs.insert(0, base)
+            idx = 0
+        else:
+            runs.append(base)
+            idx = len(runs) - 1
+    else:
+        current = runs[idx]
+        merged = {**current, **patch}
+        merged['id'] = run_id
+        merged['missionId'] = mission_id
+        merged['updatedAt'] = now_ms()
+        # Keep evidence unique & stable
+        if isinstance(merged.get('evidence'), list):
+            merged['evidence'] = list(dict.fromkeys([str(x) for x in merged['evidence'] if str(x).strip()]))
+        runs[idx] = merged
+
+    # Cap per-mission run history
+    if len(runs) > 80:
+        runs = runs[:80]
+
+    runs_by_mission[mission_id] = runs
+    data['missionRuns'] = runs_by_mission
+    return runs[idx]
+
+
+def get_mission_runs(data, mission_id: str, limit: int = 20):
+    mission_id = str(mission_id or '').strip()
+    if not mission_id:
+        return []
+    runs = (data.get('missionRuns') or {}).get(mission_id) or []
+    if not isinstance(runs, list):
+        return []
+    try:
+        limit = max(1, min(int(limit), 100))
+    except Exception:
+        limit = 20
+    return runs[:limit]
 
 
 def dedupe_board_items(data):
@@ -1157,10 +1239,16 @@ class Handler(SimpleHTTPRequestHandler):
 
                             mutated = True
 
-                    tl = get_mission_timeline(data, m.get('id'))
+                    mid = m.get('id')
+                    tl = get_mission_timeline(data, mid)
                     m['timelineCount'] = len(tl)
                     if tl:
                         m['latestTransition'] = tl[-1]
+
+                    # Attach last execution run summary for UI cards ("Última execução")
+                    runs = get_mission_runs(data, mid, 1)
+                    if runs:
+                        m['lastRun'] = runs[0]
 
             if mutated:
                 save_data(data)
@@ -1187,6 +1275,14 @@ class Handler(SimpleHTTPRequestHandler):
                     return self._json(500, {'ok': False, 'error': 'read_failed'})
             return self._json(404, {'ok': False, 'error': 'not_found'})
 
+        if path.startswith('/api/missions/') and path.endswith('/runs'):
+            mission_id = unquote(path[len('/api/missions/'): -len('/runs')]).strip('/')
+            if not mission_id:
+                return self._json(400, {'ok': False, 'error': 'missing_mission_id'})
+            data = load_data()
+            runs = get_mission_runs(data, mission_id, 30)
+            return self._json(200, {'ok': True, 'missionId': mission_id, 'runs': runs, 'count': len(runs)})
+
         if path == '/api/projects':
             reg = load_project_registry()
             # Return only safe/public fields
@@ -1207,6 +1303,8 @@ class Handler(SimpleHTTPRequestHandler):
             timeline = get_mission_timeline(data, mission_id)
             _, _, mission = find_mission_ref(data, mission_id)
             ex = normalize_execution(mission) if mission else {}
+            runs = get_mission_runs(data, mission_id, 10)
+            last_run = runs[0] if runs else None
             return self._json(200, {
                 'ok': True,
                 'missionId': mission_id,
@@ -1218,8 +1316,12 @@ class Handler(SimpleHTTPRequestHandler):
                     'evidence': ex.get('evidence', []) if ex else [],
                     'sessionId': ex.get('sessionId') if ex else None,
                     'agent': ex.get('agent') if ex else None,
+                    'tool': ex.get('tool') if ex else None,
+                    'runId': ex.get('runId') if ex else None,
                     'updatedAt': ex.get('updatedAt') if ex else None,
                 },
+                'runs': runs,
+                'lastRun': last_run,
             })
         if path == '/api/openclaw/agents/details':
             details = BASE / 'openclaw-agents-details.json'
@@ -1355,6 +1457,7 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json(404, {'ok': False, 'error': 'mission_not_found'})
 
             ex = normalize_execution(mission)
+            ex['tool'] = ex.get('tool') or 'proof_api'
             if payload.get('sessionId') is not None:
                 ex['sessionId'] = payload.get('sessionId') or None
             if payload.get('agent'):
@@ -1381,6 +1484,22 @@ class Handler(SimpleHTTPRequestHandler):
                 mission['needsUserAction'] = ''
 
             col['items'][idx] = mission
+
+            # Activity Feed (per-execution)
+            run_id = f"proof_{uuid.uuid4().hex[:12]}"
+            upsert_mission_run(data, mission_id, run_id, {
+                'tool': ex.get('tool') or 'proof_api',
+                'agent': ex.get('agent') or mission.get('owner') or 'system',
+                'sessionId': ex.get('sessionId') or mission_id,
+                'input': json.dumps({'source': 'api/missions/proof', 'status': ex.get('status'), 'incomingEvidence': incoming if isinstance(incoming, list) else []}, ensure_ascii=False)[:2400],
+                'output': '',
+                'status': ex.get('status') or 'pending',
+                'startedAt': now_ms(),
+                'endedAt': now_ms(),
+                'durationMs': 0,
+                'evidence': ex.get('evidence', []),
+            })
+
             append_trail_entry(mission_id, mission.get('title', 'Missão sem título'), f"Proof registrada ({ex['status']}) com {len(ex.get('evidence', []))} evidência(s).")
             save_data(data)
             return self._json(200, {'ok': True, 'missionId': mission_id, 'execution': ex, 'effective': mission['effective']})
@@ -1404,6 +1523,11 @@ class Handler(SimpleHTTPRequestHandler):
             ex['updatedAt'] = now_ms()
             ex['endedAt'] = None
             ex['status'] = 'running'
+            ex['tool'] = 'openclaw_agent'
+            run_id = f"run_{uuid.uuid4().hex[:12]}"
+            ex['runId'] = run_id
+            mission['lastRunId'] = run_id
+            mission['executionTool'] = ex.get('tool')
 
             # Clear any stale user-action text when re-queuing.
             mission['needsUserAction'] = ''
@@ -1425,6 +1549,20 @@ class Handler(SimpleHTTPRequestHandler):
             owner = mission.get('owner', 'Stark')
             agent_id = owner_to_agent_id(owner)
             msg = mission_openclaw_text(mission)
+
+            # Activity Feed: register run start (async)
+            data_start = load_data()
+            upsert_mission_run(data_start, mission_id, run_id, {
+                'tool': ex.get('tool') or 'openclaw_agent',
+                'agent': agent_id,
+                'sessionId': mission_id,
+                'input': (msg or '')[:2400],
+                'output': '',
+                'status': 'running',
+                'startedAt': ex.get('startedAt') or now_ms(),
+                'evidence': [],
+            })
+            save_data(data_start)
 
             def worker():
                 # Criterion C must verify the workspace where the responsible agent operates.
@@ -1467,6 +1605,8 @@ class Handler(SimpleHTTPRequestHandler):
                 ex2 = normalize_execution(mission2)
                 ex2['agent'] = agent_id
                 ex2['sessionId'] = mission_id
+                ex2['tool'] = ex2.get('tool') or 'openclaw_agent'
+                ex2['runId'] = ex.get('runId') or run_id
                 ex2['updatedAt'] = now_ms()
                 ex2['endedAt'] = now_ms()
 
@@ -1515,6 +1655,26 @@ class Handler(SimpleHTTPRequestHandler):
                     if col2 is not None and idx2 is not None:
                         col2['items'][idx2] = mission2
 
+                # Activity Feed: finalize run
+                try:
+                    started_at = int(ex.get('startedAt') or ex2.get('startedAt') or now_ms())
+                    ended_at = int(ex2.get('endedAt') or now_ms())
+                except Exception:
+                    started_at = int(ex2.get('startedAt') or now_ms())
+                    ended_at = int(ex2.get('endedAt') or now_ms())
+                duration_ms = max(0, ended_at - started_at)
+                upsert_mission_run(data2, mission_id, str(ex.get('runId') or run_id), {
+                    'tool': ex2.get('tool') or 'openclaw_agent',
+                    'agent': agent_id,
+                    'sessionId': mission_id,
+                    'status': ex2.get('status') or 'unknown',
+                    'startedAt': started_at,
+                    'endedAt': ended_at,
+                    'durationMs': duration_ms,
+                    'output': (result.get('reply') or '')[:2400],
+                    'evidence': evidence,
+                }, prepend_if_missing=True)
+
                 append_trail_entry(mission_id, mission2.get('title', 'Missão sem título'), f"Execução (LLM) finalizada: {ex2['status']} | evidências: {len(evidence)}")
                 save_data(data2)
 
@@ -1543,9 +1703,16 @@ class Handler(SimpleHTTPRequestHandler):
             ex = normalize_execution(mission)
             ex['startedAt'] = ex.get('startedAt') or now_ms()
             ex['updatedAt'] = now_ms()
+            ex['tool'] = ex.get('tool') or 'deterministic_executor'
+            run_id = f"exec_{uuid.uuid4().hex[:12]}"
+            ex['runId'] = run_id
+            mission['lastRunId'] = run_id
+            mission['executionTool'] = ex.get('tool')
 
             ok, kind, evidence = apply_mission_effect(mission)
             mission['kind'] = kind
+            ex['tool'] = kind
+            mission['executionTool'] = kind
 
             status = 'effective' if ok else 'failed'
             needs_user_action = ''
@@ -1569,6 +1736,21 @@ class Handler(SimpleHTTPRequestHandler):
 
             if col is not None and idx is not None:
                 col['items'][idx] = mission
+
+            # Activity Feed
+            duration_ms = max(0, int(ex.get('endedAt') or now_ms()) - int(ex.get('startedAt') or now_ms()))
+            upsert_mission_run(data, mission_id, run_id, {
+                'tool': kind,
+                'agent': ex.get('agent') or mission.get('owner') or 'system',
+                'sessionId': ex.get('sessionId') or mission_id,
+                'input': json.dumps({'source': 'api/missions/execute', 'kind': kind}, ensure_ascii=False)[:800],
+                'output': '',
+                'status': status,
+                'startedAt': int(ex.get('startedAt') or now_ms()),
+                'endedAt': int(ex.get('endedAt') or now_ms()),
+                'durationMs': duration_ms,
+                'evidence': ex.get('evidence', []),
+            })
 
             append_trail_entry(mission['id'], mission.get('title', 'Missão sem título'), f"Execução ({kind}): {'OK' if ok else 'FALHOU'} | {'; '.join(evidence)}")
             if mission.get('needsUserAction'):

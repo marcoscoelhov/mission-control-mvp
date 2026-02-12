@@ -328,20 +328,35 @@ async function renderMissionHistory(key) {
     const res = await fetchJson(`/api/missions/${encodeURIComponent(missionId)}/timeline`);
     const tl = Array.isArray(res?.timeline) ? res.timeline : [];
     const proof = res?.executionProof || {};
+    const runs = Array.isArray(res?.runs) ? res.runs : [];
 
     const header = [];
     const status = proof.status ? String(proof.status) : '—';
     const ev = Array.isArray(proof.evidence) ? proof.evidence : [];
     header.push(`PROOF: ${status} | evidências: ${ev.length}`);
     if (proof.agent) header.push(`AGENTE: ${proof.agent}`);
+    if (proof.tool) header.push(`TOOL: ${proof.tool}`);
+    if (proof.runId) header.push(`RUN: ${proof.runId}`);
     if (proof.sessionId) header.push(`SESSION: ${proof.sessionId}`);
+
+    const runLines = runs.length
+      ? ['\nACTIVITY FEED (últimas execuções):', ...runs.slice(0, 8).map((r) => {
+          const st = String(r.status || '');
+          const tool = String(r.tool || '');
+          const dur = Number(r.durationMs || 0);
+          const durTxt = dur ? `${Math.round(dur / 1000)}s` : '—';
+          const at = r.endedAt ? new Date(Number(r.endedAt)).toLocaleString('pt-BR') : '';
+          const evCount = Array.isArray(r.evidence) ? r.evidence.length : 0;
+          return `- [${at || '—'}] ${st} · ${tool} · ${durTxt} · evidências: ${evCount}`;
+        })].join('\n')
+      : '\nACTIVITY FEED: (nenhuma execução registrada)';
 
     const evLines = ev.length
       ? ['EVIDÊNCIAS:', ...ev.slice(0, 8).map((x) => `- ${String(x).slice(0, 220)}`)].join('\n')
       : 'EVIDÊNCIAS: (nenhuma)';
 
     if (!tl.length) {
-      missionHistoryView.textContent = `${header.join(' · ')}\n\n${evLines}\n\nSem transições registradas ainda.`;
+      missionHistoryView.textContent = `${header.join(' · ')}\n\n${evLines}${runLines}\n\nSem transições registradas ainda.`;
       return;
     }
 
@@ -358,7 +373,7 @@ async function renderMissionHistory(key) {
         return `- [${at}] ${from} → ${to} (${actor}/${reason})`;
       });
 
-    missionHistoryView.textContent = `${header.join(' · ')}\n\n${evLines}\n\nTRAJETO:\n${lines.join('\n')}`;
+    missionHistoryView.textContent = `${header.join(' · ')}\n\n${evLines}${runLines}\n\nTRAJETO:\n${lines.join('\n')}`;
     return;
   } catch (_) {
     // Fallback to local log
@@ -1026,6 +1041,18 @@ function createCard(item, columnKey = '') {
     : (c.needsEffectiveness ? `<span class="chip mini">Revisão de efetividade</span>` : `<span class="chip mini">Efetividade pendente</span>`);
 
   const executionBadge = c.executionStatus ? `<span class="chip mini">${escapeHtml(c.executionStatus)}</span>` : '';
+
+  const lastRun = c.lastRun || null;
+  const lastRunLine = (() => {
+    if (!lastRun) return '';
+    const st = escapeHtml(String(lastRun.status || ''));
+    const tool = escapeHtml(String(lastRun.tool || ''));
+    const dur = Number(lastRun.durationMs || 0);
+    const durTxt = dur ? `${Math.round(dur / 1000)}s` : '—';
+    const at = lastRun.endedAt ? new Date(Number(lastRun.endedAt)).toLocaleString('pt-BR') : '';
+    return `<div class="muted" style="margin-top:6px">Última execução: ${st} · ${tool} · ${durTxt}${at ? ` · ${escapeHtml(at)}` : ''}</div>`;
+  })();
+
   const stageBadge = '';
   const oracleBadge = '';
   const respondBtn = (normalizeColumnKey(columnKey) === 'awaiting_monarca' || String(c.needsUserAction || '').toLowerCase().includes('resposta do monarca'))
@@ -1038,6 +1065,7 @@ function createCard(item, columnKey = '') {
     <h3>${escapeHtml(c.title)}</h3>
     ${isMobile ? mobileStepperHtml(columnKey) : ''}
     <p>${escapeHtml(c.desc)}</p>
+    ${lastRunLine}
     <div class="score-row">
       <span class="score-pill">💰 ${c.impactRevenue}</span>
       <span class="score-pill">🤖 ${c.impactAutonomy}</span>
