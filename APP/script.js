@@ -607,6 +607,41 @@ async function checkBackendConnection() {
   addLiveEvent('Backend', ok ? `Conectado (${API.health})` : `Sem resposta em ${API.health}`);
 }
 
+async function loadProjects() {
+  try {
+    const res = await fetch('/api/projects', { cache: 'no-store' });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data.projects) ? data.projects : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function hydrateProjectSelect(projects = []) {
+  if (!missionProjectInput) return;
+
+  const current = (missionProjectInput.value || 'auto').trim();
+  const keep = new Set(['auto']);
+
+  const next = [
+    { id: 'auto', name: 'Auto-detect' },
+    ...projects.filter((p) => p && p.id && !keep.has(String(p.id))),
+  ];
+
+  missionProjectInput.innerHTML = '';
+  next.forEach((p) => {
+    const opt = document.createElement('option');
+    opt.value = String(p.id);
+    opt.textContent = String(p.name || p.id);
+    missionProjectInput.appendChild(opt);
+  });
+
+  // restore selection if possible
+  const ids = new Set(next.map((p) => String(p.id)));
+  missionProjectInput.value = ids.has(current) ? current : 'auto';
+}
+
 async function loadMission() {
   for (const url of ['/api/mission.md', './MISSAO.md']) {
     try {
@@ -2003,7 +2038,8 @@ async function init() {
   renderLiveFeed();
   setLiveTab('history');
   await checkBackendConnection();
-  const [dashboard, agents] = await Promise.all([loadDashboard(), loadAgentsDetails(), loadMission(), loadTelemetry()]);
+  const [dashboard, agents, projects] = await Promise.all([loadDashboard(), loadAgentsDetails(), loadProjects(), loadMission(), loadTelemetry()]);
+  hydrateProjectSelect(projects);
   renderBoard(dashboard.columns || fallbackData.columns);
   if (agents.length) renderAgents(agents);
   addLiveEvent('Live inicializado', 'Histórico pronto para acompanhar o que foi feito.');

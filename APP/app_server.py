@@ -17,6 +17,7 @@ DATA_SEED_FILE = BASE / 'data.sample.json'
 TRAIL_FILE = BASE / 'MISSOES_TRAJETO.md'
 MISSION_FILE = BASE / 'MISSAO.md'
 CHAT_FILE = BASE / 'agent-chat.json'
+PROJECT_REGISTRY_FILE = Path('/root/.openclaw/PROJECT_REGISTRY.json')
 
 # External messaging must be explicitly enabled and configured via env.
 # Example: WHATSAPP_TARGETS="5566... , 5566..." WHATSAPP_CLARIFY_ENABLED=1
@@ -528,6 +529,28 @@ def load_chat():
         return json.loads(CHAT_FILE.read_text(encoding='utf-8'))
     except Exception:
         return {'messages': []}
+
+
+def load_project_registry():
+    """Load project registry from /root/.openclaw/PROJECT_REGISTRY.json.
+
+    Returns a dict with key 'projects' (list). Always returns a safe default.
+    """
+    default = {
+        'version': 1,
+        'projects': [
+            {'id': 'mission-control', 'name': 'Mission Control', 'rootPaths': [str(BASE)], 'keywords': ['mission control'], 'defaultOwner': 'wanda'},
+            {'id': 'geral', 'name': 'Geral', 'rootPaths': [], 'keywords': [], 'defaultOwner': 'stark'},
+        ]
+    }
+    try:
+        if PROJECT_REGISTRY_FILE.exists():
+            data = json.loads(PROJECT_REGISTRY_FILE.read_text(encoding='utf-8'))
+            if isinstance(data, dict) and isinstance(data.get('projects'), list):
+                return data
+    except Exception:
+        pass
+    return default
 
 
 def save_chat(data):
@@ -1163,6 +1186,19 @@ class Handler(SimpleHTTPRequestHandler):
                 except Exception:
                     return self._json(500, {'ok': False, 'error': 'read_failed'})
             return self._json(404, {'ok': False, 'error': 'not_found'})
+
+        if path == '/api/projects':
+            reg = load_project_registry()
+            # Return only safe/public fields
+            projects = []
+            for p in reg.get('projects', []) or []:
+                if not isinstance(p, dict):
+                    continue
+                projects.append({
+                    'id': str(p.get('id') or '').strip(),
+                    'name': str(p.get('name') or '').strip(),
+                })
+            return self._json(200, {'ok': True, 'projects': projects})
         if path.startswith('/api/missions/') and path.endswith('/timeline'):
             mission_id = unquote(path[len('/api/missions/'): -len('/timeline')]).strip('/')
             if not mission_id:
