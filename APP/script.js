@@ -78,6 +78,7 @@ const apiAutonomousInput = document.getElementById('api-autonomous');
 const saveGeneralBtn = document.getElementById('save-general');
 const toastWrap = document.getElementById('toast-wrap');
 const throughputValue = document.getElementById('throughput-value');
+const slaValue = document.getElementById('sla-value');
 const missionHistoryView = document.getElementById('mission-history-view');
 const governanceView = document.getElementById('governance-view');
 const agentsActiveValue = document.getElementById('agents-active-value');
@@ -97,6 +98,7 @@ let activityLog = [];
 let executionsWindow = [];
 let selectedMissionKey = 'system';
 let telemetryState = { agents: [], summary: { activeSessions: 0 } };
+let opsMetrics = { throughputPerMin: 0, slaEffectivePct: 0 };
 let showFailedOnly = false;
 let boardFilter = localStorage.getItem('mc_board_filter') || 'all';
 
@@ -467,6 +469,14 @@ function updateHeaderMetrics() {
     }, 0);
     tasksQueueValue.textContent = String(total);
   }
+
+  if (throughputValue && Number.isFinite(Number(opsMetrics?.throughputPerMin))) {
+    throughputValue.textContent = String(Number(opsMetrics.throughputPerMin || 0));
+  }
+  if (slaValue) {
+    const sla = Number(opsMetrics?.slaEffectivePct || 0);
+    slaValue.textContent = `${sla.toFixed(1)}%`;
+  }
 }
 
 function priorityScore(card) {
@@ -628,6 +638,17 @@ async function loadGovernanceSummary() {
   } catch (_) {
     return { ok: false, rules: {}, approvals: [], pendingApprovals: [], epics: [] };
   }
+}
+
+async function loadOpsMetrics() {
+  try {
+    const d = await fetchJson('/api/metrics/ops');
+    if (d?.ok) {
+      opsMetrics = d;
+      return d;
+    }
+  } catch (_) {}
+  return opsMetrics;
 }
 
 function renderGovernance(summary) {
@@ -1849,7 +1870,7 @@ function startRealtimeRefresh() {
     ingestDashboardTransitions(dashboard);
     renderBoard(dashboard.columns || fallbackData.columns);
 
-    const [agents] = await Promise.all([loadAgentsDetails(), loadTelemetry()]);
+    const [agents] = await Promise.all([loadAgentsDetails(), loadTelemetry(), loadOpsMetrics()]);
     if (agents.length) renderAgents(agents);
     if (document.querySelector('#live-toolbar .chip.active')?.dataset?.liveTab === 'governance') {
       const gov = await loadGovernanceSummary();
@@ -1936,61 +1957,24 @@ function setupUI() {
       return;
     }
 
-    const title = url ? `Ref: ${(() => { try { return new URL(url).host; } catch (_) { return 'link'; } })()}` : 'Ref: conteúdo colado';
-    const desc = [
-      '[REFERÊNCIA]',
-      url ? `URL: ${url}` : null,
-      text ? `\n[TEXTO]\n${text}` : null,
-      goal ? `\n[OBJETIVO MONETÁRIO]\n${goal}` : null,
-      '\n[PIPELINE OBRIGATÓRIO]',
-      '1) Resuma em 5-10 bullets (o que importa para o Reino).',
-      '2) Extraia ações executáveis (tarefas pequenas) com dono sugerido (Thanos/Wanda/Alfred).',
-      '3) Gere backlog priorizado por AUTONOMIA + RECEITA (com critérios de sucesso).',
-    ].filter(Boolean).join('\n');
-
-    const success = [
-      'Resumo entregue + link/trechos citados.',
-      'Lista de ações com owner + critérios de sucesso.',
-      'Backlog priorizado por autonomia+receita em formato Kanban.',
-    ].join('\n- ');
-
-    const payload = {
-      missionId: makeMissionId(),
-      title,
-      requestedTitle: title,
-      desc,
-      owner: 'Stark',
-      eta: 'agora',
-      impactRevenue: 4,
-      impactAutonomy: 4,
-      urgency: 3,
-      approved: false,
-      kind: 'reference_ingest',
-      targetFile: '',
-      expectedChange: '',
-      acceptanceTest: `- ${success}`,
-    };
-
     sendIngestBtn.disabled = true;
     try {
-      const created = await persistBroadcastMission(payload);
-      if (STRICT_PERSISTENCE && !created.ok) {
-        showToast('Falha ao persistir ingestão no backend');
+      const title = url ? `Radar: ${(() => { try { return new URL(url).host; } catch (_) { return 'link'; } })()}` : 'Radar: insight externo';
+      const res = await apiPost('/api/intelligence/ingest', { url, text, goal, title });
+      if (!res.ok || !res.data?.ok) {
+        showToast('Falha na ingestão do radar');
         return;
       }
 
-      payload.id = created.missionId || payload.missionId;
-      payload.cardId = payload.id;
-      payload.title = created.missionTitle || payload.title;
+      const dashboard = await loadDashboard();
+      ingestDashboardTransitions(dashboard);
+      renderBoard(dashboard.columns || fallbackData.columns);
 
-      addMissionToInbox(payload);
-      const boardOk = await persistBoardState('broadcast_inbox', { title: payload.title, missionId: payload.id || payload.cardId });
-      if (STRICT_PERSISTENCE && !boardOk) {
-        showToast('Falha ao persistir estado do board no backend');
-        return;
-      }
-
-      addLiveEvent('Referência ingerida', `${payload.title} enviada para Inbox.`, true, { missionKey: payload.cardId || payload.title, missionTitle: payload.title });
+      const sc = res.data.score || {};
+      addLiveEvent('Radar ingerido', `${title} | score ${sc.total || 0} (R${sc.revenue || 0}/A${sc.autonomy || 0}/U${sc.urgency || 0})`, true, {
+        missionKey: res.data.missionId || title,
+        missionTitle: title,
+      });
 
       if (refUrlInput) refUrlInput.value = '';
       if (refTextInput) refTextInput.value = '';
@@ -2208,7 +2192,7 @@ async function init() {
   renderLiveFeed();
   setLiveTab('history');
   await checkBackendConnection();
-  const [dashboard, agents, projects] = await Promise.all([loadDashboard(), loadAgentsDetails(), loadProjects(), loadMission(), loadTelemetry()]);
+  const [dashboard, agents, projects] = await Promise.all([loadDashboard(), loadAgentsDetails(), loadProjects(), loadMission(), loadTelemetry(), loadOpsMetrics()]);
   hydrateProjectSelect(projects);
   renderBoard(dashboard.columns || fallbackData.columns);
   if (agents.length) renderAgents(agents);

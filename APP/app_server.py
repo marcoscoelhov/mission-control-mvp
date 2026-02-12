@@ -52,6 +52,10 @@ DEFAULT_DATA = {
         'blockMoveIfPendingApproval': True,
     },
     'approvals': [],
+    'externalRadar': {
+        'signals': [],
+        'updatedAt': 0,
+    },
 }
 
 
@@ -125,6 +129,36 @@ def infer_context_area(text: str):
     if any(k in t for k in ['api', 'backend', 'server', 'endpoint', 'app_server.py']):
         return 'backend'
     return 'general'
+
+
+def compute_ingest_score(text: str, goal: str = ''):
+    t = (text or '').lower()
+    g = (goal or '').lower()
+
+    revenue = 2
+    autonomy = 2
+    urgency = 2
+
+    if any(k in t or k in g for k in ['venda', 'convers', 'oferta', 'ticket', 'ltv', 'mrr', 'receita', 'monet']):
+        revenue += 2
+    if any(k in t for k in ['funnel', 'landing', 'copy', 'pricing', 'upsell']):
+        revenue += 1
+
+    if any(k in t or k in g for k in ['autom', 'workflow', 'agent', 'deleg', 'orquestr', 'autonom']):
+        autonomy += 2
+    if any(k in t for k in ['integra', 'api', 'pipeline', 'cron']):
+        autonomy += 1
+
+    if any(k in t for k in ['hoje', 'agora', 'urgente', 'bloqueio', 'erro', 'queda']):
+        urgency += 2
+    elif any(k in t for k in ['esta semana', 'sprint', 'prioridade']):
+        urgency += 1
+
+    revenue = max(1, min(5, revenue))
+    autonomy = max(1, min(5, autonomy))
+    urgency = max(1, min(5, urgency))
+    total = revenue + autonomy + urgency
+    return revenue, autonomy, urgency, total
 
 
 def _tree(root: Path, max_entries: int = 80):
@@ -602,6 +636,10 @@ def load_data():
         }
     if not isinstance(data.get('approvals'), list):
         data['approvals'] = []
+    if not isinstance(data.get('externalRadar'), dict):
+        data['externalRadar'] = {'signals': [], 'updatedAt': 0}
+    if not isinstance((data.get('externalRadar') or {}).get('signals'), list):
+        data['externalRadar']['signals'] = []
     return data
 
 
@@ -1404,6 +1442,42 @@ class Handler(SimpleHTTPRequestHandler):
                 'runs': runs,
                 'lastRun': last_run,
             })
+        if path == '/api/metrics/ops':
+            data = load_data()
+            runs = []
+            mission_runs = data.get('missionRuns') or {}
+            if isinstance(mission_runs, dict):
+                for v in mission_runs.values():
+                    if isinstance(v, list):
+                        runs.extend([x for x in v if isinstance(x, dict)])
+
+            now = now_ms()
+            last_minute = [r for r in runs if int(r.get('endedAt') or 0) >= (now - 60_000)]
+            throughput = len(last_minute)
+
+            closed = [r for r in runs if str(r.get('status') or '') in ('effective', 'failed', 'proof_pending')]
+            effective = [r for r in closed if str(r.get('status') or '') == 'effective']
+            sla = round((len(effective) / len(closed)) * 100, 1) if closed else 0.0
+
+            return self._json(200, {
+                'ok': True,
+                'throughputPerMin': throughput,
+                'slaEffectivePct': sla,
+                'runsClosed': len(closed),
+                'runsEffective': len(effective),
+            })
+
+        if path == '/api/intelligence/radar':
+            data = load_data()
+            radar = data.get('externalRadar') or {'signals': [], 'updatedAt': 0}
+            signals = sorted((radar.get('signals') or []), key=lambda x: int(x.get('createdAt') or 0), reverse=True)[:50]
+            return self._json(200, {
+                'ok': True,
+                'updatedAt': radar.get('updatedAt') or 0,
+                'signals': signals,
+                'count': len(signals),
+            })
+
         if path == '/api/governance/summary':
             data = load_data()
             rules = data.get('boardRules') or {}
@@ -2165,6 +2239,76 @@ class Handler(SimpleHTTPRequestHandler):
             save_data(data)
 
             return self._json(200, {'ok': True, 'missionId': mission_id, 'title': mission.get('title'), 'requestedTitle': requested_title})
+
+        if self.path == '/api/intelligence/ingest':
+            payload = self._read_json()
+            url = str(payload.get('url') or '').strip()
+            text = str(payload.get('text') or '').strip()
+            goal = str(payload.get('goal') or '').strip()
+            if not url and not text:
+                return self._json(400, {'ok': False, 'error': 'missing_input'})
+
+            raw = '\n'.join([x for x in [url, text, goal] if x])
+            revenue, autonomy, urgency, total = compute_ingest_score(raw, goal)
+
+            data = load_data()
+            mission_id = f"m_{uuid.uuid4().hex[:10]}"
+            title = payload.get('title') or (f"Radar: {urlparse(url).netloc}" if url else 'Radar: insight externo')
+            mission = {
+                'id': mission_id,
+                'missionId': mission_id,
+                'cardId': mission_id,
+                'title': str(title),
+                'desc': '\n'.join([
+                    '[RADAR EXTERNO]',
+                    f"URL: {url}" if url else '',
+                    f"\n[TEXTO]\n{text}" if text else '',
+                    f"\n[OBJETIVO]\n{goal}" if goal else '',
+                ]).strip(),
+                'owner': 'Alfred',
+                'riskLevel': 0,
+                'approved': True,
+                'impactRevenue': revenue,
+                'impactAutonomy': autonomy,
+                'urgency': urgency,
+                'priorityScore': total,
+                'kind': 'external_radar',
+                'createdAt': now_ms(),
+                'updatedAt': now_ms(),
+            }
+
+            inbox = get_column(data, 'Inbox', 'Inbox')
+            inbox['items'] = [mission] + (inbox.get('items') or [])
+
+            radar = data.get('externalRadar') or {'signals': [], 'updatedAt': 0}
+            radar['signals'] = [{
+                'id': f"sig_{uuid.uuid4().hex[:8]}",
+                'url': url,
+                'snippet': (text or '')[:500],
+                'goal': goal,
+                'scoreRevenue': revenue,
+                'scoreAutonomy': autonomy,
+                'scoreUrgency': urgency,
+                'scoreTotal': total,
+                'missionId': mission_id,
+                'createdAt': now_ms(),
+            }] + (radar.get('signals') or [])
+            radar['signals'] = radar['signals'][:200]
+            radar['updatedAt'] = now_ms()
+            data['externalRadar'] = radar
+
+            append_trail_entry(mission_id, mission.get('title', 'Radar'), f"Ingestão radar criada com score total {total} (R{revenue}/A{autonomy}/U{urgency}).")
+            save_data(data)
+            return self._json(200, {
+                'ok': True,
+                'missionId': mission_id,
+                'score': {
+                    'revenue': revenue,
+                    'autonomy': autonomy,
+                    'urgency': urgency,
+                    'total': total,
+                }
+            })
 
         if self.path == '/api/governance/rules':
             payload = self._read_json()
