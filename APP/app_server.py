@@ -33,6 +33,8 @@ DEFAULT_DATA = {
         {'name': 'Done', 'items': []},
         {'name': 'Blocked', 'items': []},
         {'name': 'Failed', 'items': []},
+        {'name': 'Awaiting Monarca', 'items': []},
+        {'name': 'Proof Pending', 'items': []},
         {'name': 'Needs Monarca Decision', 'items': []},
     ],
     'feed': [],
@@ -282,6 +284,59 @@ def ask_whatsapp_clarification(mission, reason):
     return ok
 
 
+def migrate_monarca_columns(data):
+    """Migrate legacy "Needs Monarca Decision" into clearer buckets.
+
+    - Proof Pending: execution/proof issues (e.g. criterion_c_missing)
+    - Awaiting Monarca: truly waiting for user input/OK
+
+    Keeps legacy column for backwards-compat but empties it.
+    """
+    # Ensure new columns exist
+    awaiting = get_column(data, 'Awaiting Monarca', 'Awaiting Monarca')
+    proof = get_column(data, 'Proof Pending', 'Proof Pending')
+    legacy = get_column(data, 'Needs Monarca Decision')
+    if not legacy:
+        return
+
+    moved_awaiting = []
+    moved_proof = []
+
+    # Build a quick lookup for latest transition reason per mission
+    latest_reason = {}
+    for e in (data.get('auditTrail') or []):
+        mid = str(e.get('missionId') or '').strip()
+        if not mid:
+            continue
+        ts = int(e.get('timestamp') or 0)
+        prev = latest_reason.get(mid)
+        if (prev is None) or (ts >= prev[0]):
+            latest_reason[mid] = (ts, str(e.get('reason') or '').strip())
+
+    for m in (legacy.get('items') or []):
+        ensure_execution_defaults(m)
+        ex = normalize_execution(m)
+        status = str(ex.get('status') or '').lower()
+        mid = str(m.get('id') or m.get('cardId') or '').strip()
+        reason = (latest_reason.get(mid) or (0, ''))[1]
+
+        # Heuristic:
+        # - criterion_c_missing (and most proof issues) -> Proof Pending
+        # - explicit awaiting statuses -> Awaiting Monarca
+        if reason == 'criterion_c_missing' or status in ('proof_pending', 'failed'):
+            moved_proof.append(m)
+        else:
+            # Default: still treat as awaiting user
+            moved_awaiting.append(m)
+
+    if moved_proof:
+        proof['items'] = moved_proof + (proof.get('items') or [])
+    if moved_awaiting:
+        awaiting['items'] = moved_awaiting + (awaiting.get('items') or [])
+
+    legacy['items'] = []
+
+
 def load_data():
     # If no local state exists yet, optionally seed from a sample file (kept in repo).
     if not DATA_FILE.exists() and DATA_SEED_FILE.exists():
@@ -293,6 +348,7 @@ def load_data():
     if not DATA_FILE.exists():
         data = json.loads(json.dumps(DEFAULT_DATA))
         remove_needs_clarification_column(data)
+        migrate_monarca_columns(data)
         return data
 
     try:
@@ -301,6 +357,7 @@ def load_data():
         data = json.loads(json.dumps(DEFAULT_DATA))
 
     remove_needs_clarification_column(data)
+    migrate_monarca_columns(data)
     return data
 
 
@@ -1210,11 +1267,11 @@ class Handler(SimpleHTTPRequestHandler):
                 base_ok = bool(result.get('ok'))
                 final_ok = base_ok and c_ok
 
-                # If criterion C fails, this is a Monarca decision (missing asset/permission), not a generic failure.
+                # If criterion C fails, this is a proof problem (not necessarily a Monarca decision).
                 if final_ok:
                     ex2['status'] = 'effective'
                 else:
-                    ex2['status'] = 'needs_monarca_decision' if base_ok and (not c_ok) else 'failed'
+                    ex2['status'] = 'proof_pending' if base_ok and (not c_ok) else 'failed'
 
                 evidence = list(dict.fromkeys((ex2.get('evidence') or []) + (result.get('evidence') or []) + git_evidence))
                 ex2['evidence'] = evidence
@@ -1227,27 +1284,27 @@ class Handler(SimpleHTTPRequestHandler):
                 if mission2['effective']:
                     mission2['needsUserAction'] = ''
                 else:
-                    if ex2['status'] == 'needs_monarca_decision':
+                    if ex2['status'] == 'proof_pending':
                         mission2['needsUserAction'] = (
-                            'Proof incompleta: não detectei mudanças verificáveis no workspace do executor (ver exec_repo nas evidências). '
-                            'Ajuste o alvo (arquivo/tarefa), reexecute, ou autorize explicitamente aceitar proof não-git (ex.: screenshot/log) e reclassificar como efetiva.'
+                            'PROOF pendente: não detectei mudanças verificáveis no workspace do executor (ver exec_repo nas evidências). '
+                            'Ajuste o alvo (arquivo/tarefa) e reexecute. Se a proof não for git, anexe screenshot/log como evidência.'
                         )
                     else:
                         mission2['needsUserAction'] = 'Falha de execução. Ver evidências e reexecutar.'
 
-                # Move mission to the proper column when it needs a Monarca decision.
-                if ex2['status'] == 'needs_monarca_decision':
+                # Route proof failures to Proof Pending (not Awaiting Monarca).
+                if ex2['status'] == 'proof_pending':
                     # Remove from current column
                     if col2 is not None and idx2 is not None:
                         try:
                             col2['items'].pop(idx2)
                         except Exception:
                             pass
-                    target = get_column(data2, 'Needs Monarca Decision', 'Needs Monarca Decision')
+                    target = get_column(data2, 'Proof Pending', 'Proof Pending')
                     if target is not None:
                         target['items'] = [mission2] + (target.get('items', []) or [])
-                        record_transition(data2, mission_id, 'in_progress', 'needs_monarca_decision', actor='alfred', reason='criterion_c_missing', title=mission2.get('title','Missão'))
-                        append_trail_entry(mission_id, mission2.get('title', 'Missão'), 'Movida para Needs Monarca Decision (Critério C não atendido).')
+                        record_transition(data2, mission_id, 'in_progress', 'proof_pending', actor='alfred', reason='criterion_c_missing', title=mission2.get('title','Missão'))
+                        append_trail_entry(mission_id, mission2.get('title', 'Missão'), 'Movida para Proof Pending (Critério de proof não atendido).')
                 else:
                     if col2 is not None and idx2 is not None:
                         col2['items'][idx2] = mission2
@@ -1392,6 +1449,32 @@ class Handler(SimpleHTTPRequestHandler):
                     col_ref['items'][idx_ref] = mission_ref
                 record_transition(data, mission_id or 'unknown', payload.get('fromColumn', '?'), payload.get('toColumn', payload.get('fromColumn', '?')), actor='marcos', reason='monarca_ok', title=title, transition_id=transition_id)
                 append_trail_entry(mission_id or 'unknown', title, 'OK do Monarca registrado.')
+
+            elif action == 'monarca_reply':
+                # Monarca provides required context/decision inside the dashboard.
+                reply = str(payload.get('reply') or payload.get('clarification') or '').strip()
+                if not reply:
+                    return self._json(400, {'ok': False, 'error': 'empty_reply', 'message': 'Resposta vazia.'})
+
+                if mission_ref is not None:
+                    # Append reply to mission description
+                    mission_ref['desc'] = str(mission_ref.get('desc') or '') + f"\n\n[Resposta do Monarca]\n{reply}"
+                    mission_ref['needsUserAction'] = ''
+                    # A reply implicitly counts as Monarca OK for risk-2 gates.
+                    mission_ref['monarcaOk'] = True
+                    ensure_execution_defaults(mission_ref)
+
+                    # Move mission to Assigned for re-execution
+                    if col_ref is not None and idx_ref is not None:
+                        try:
+                            col_ref['items'].pop(idx_ref)
+                        except Exception:
+                            pass
+                    assigned = get_column(data, 'Assigned', 'Assigned')
+                    assigned['items'] = [mission_ref] + (assigned.get('items') or [])
+
+                record_transition(data, mission_id or 'unknown', payload.get('fromColumn', '?'), 'assigned', actor='marcos', reason='monarca_reply', title=title, transition_id=transition_id)
+                append_trail_entry(mission_id or 'unknown', title, 'Monarca respondeu via dashboard; missão voltou para Assigned.')
 
             elif action == 'auto_delegate' and payload.get('title'):
                 record_transition(data, mission_id or 'unknown', 'inbox', 'assigned', actor='stark', reason='auto_delegate', title=title, transition_id=transition_id)

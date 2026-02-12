@@ -88,7 +88,22 @@ let mobileStageCollapsed = (() => {
 })();
 
 const normalizeColumnKey = (name = '') => name.toLowerCase().trim().replace(/\s+/g, '_');
-const prettyColumn = (key = '') => key.replaceAll('_', ' ').replace(/\b\w/g, (m) => m.toUpperCase());
+const prettyColumn = (key = '') => {
+  const k = String(key || '').toLowerCase().trim();
+  const map = {
+    inbox: 'Entrada',
+    assigned: 'Delegadas',
+    in_progress: 'Executando',
+    review: 'Em revisão',
+    done: 'Concluídas',
+    failed: 'Falharam',
+    blocked: 'Bloqueadas',
+    proof_pending: 'Proof pendente',
+    awaiting_monarca: 'Aguardando você',
+  };
+  if (map[k]) return map[k];
+  return k.replaceAll('_', ' ').replace(/\b\w/g, (m) => m.toUpperCase());
+};
 const makeCardId = (title = '') => `card_${title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')}`;
 const makeMissionId = () => `m_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 const hasExecutionProof = (cardLike = {}) => {
@@ -125,7 +140,7 @@ function applyMobileFilter(columns) {
   const filter = showFailedOnly ? 'failed' : boardFilter;
   const wanted =
     filter === 'active'
-      ? ['in_progress', 'assigned', 'review', 'needs_monarca_decision']
+      ? ['in_progress', 'assigned', 'review', 'awaiting_monarca', 'proof_pending']
       : filter === 'assigned'
         ? ['assigned']
         : filter === 'review'
@@ -135,8 +150,8 @@ function applyMobileFilter(columns) {
             : filter === 'failed'
               ? ['failed']
               : filter === 'waiting'
-                ? ['needs_monarca_decision', 'failed']
-                : ['in_progress', 'assigned', 'review', 'needs_monarca_decision', 'done'];
+                ? ['awaiting_monarca', 'proof_pending', 'failed']
+                : ['in_progress', 'assigned', 'review', 'awaiting_monarca', 'proof_pending', 'done'];
 
   const out = wanted.map((k) => byKey.get(k)).filter(Boolean);
   return out.length ? out : (columns || []).filter((c) => normalizeColumnKey(c.name || '') !== 'inbox');
@@ -932,7 +947,7 @@ function createCard(item, columnKey = '') {
   const riskBadge = `<span class="chip mini ${risk >= 2 ? 'danger' : risk >= 1 ? 'warning' : ''}">R${risk}</span>`;
 
   const gatePending = (() => {
-    if (risk >= 2 && !c.monarcaOk) return 'OK do Monarca pendente';
+    if (risk >= 2 && !c.monarcaOk) return 'OK do Marcos pendente';
     if (risk >= 1 && !c.approved) return 'Aprovação do Jarvis pendente';
     return '';
   })();
@@ -944,8 +959,8 @@ function createCard(item, columnKey = '') {
 
   const monarcaBtn = risk >= 2
     ? (c.monarcaOk
-      ? `<span class="chip mini approved">OK Monarca</span>`
-      : `<button class="chip mini" data-action="monarca-ok">OK Monarca</button>`)
+      ? `<span class="chip mini approved">OK Marcos</span>`
+      : `<button class="chip mini" data-action="monarca-ok">OK Marcos</button>`)
     : '';
 
   const effectiveness = c.effective
@@ -955,7 +970,9 @@ function createCard(item, columnKey = '') {
   const executionBadge = c.executionStatus ? `<span class="chip mini">${escapeHtml(c.executionStatus)}</span>` : '';
   const stageBadge = '';
   const oracleBadge = '';
-  const clarifyBtn = '';
+  const respondBtn = (normalizeColumnKey(columnKey) === 'awaiting_monarca' || String(c.needsUserAction || '').toLowerCase().includes('resposta do monarca'))
+    ? `<button class="chip mini warning" data-action="respond">Responder agora</button>`
+    : '';
   const runBtn = `<button class="chip mini" data-action="run">Executar</button>`;
   const deleteBtn = `<button class="chip mini danger" data-action="delete">Excluir</button>`;
 
@@ -975,7 +992,7 @@ function createCard(item, columnKey = '') {
     </div>
     <div class="approve-row">${stageBadge} ${typeBadge} ${riskBadge} ${gateBadge} ${approveBtn} ${monarcaBtn} ${effectiveness} ${executionBadge} ${oracleBadge}</div>
     ${c.needsUserAction ? `<div class="empty-column" style="margin-top:8px">Ação necessária: ${escapeHtml(c.needsUserAction)}</div>` : ''}
-    <div class="card-actions">${clarifyBtn} ${runBtn} ${deleteBtn}</div>
+    <div class="card-actions">${respondBtn} ${runBtn} ${deleteBtn}</div>
   `;
 
   card.querySelector('[data-action="approve"]')?.addEventListener('click', async (e) => {
@@ -1011,7 +1028,7 @@ function createCard(item, columnKey = '') {
 
     const ok = await persistBoardState('monarca_ok', { missionId: card.dataset.missionId || card.dataset.cardId, title: card.dataset.title });
     if (STRICT_PERSISTENCE && !ok) {
-      showToast('Falha ao persistir OK do Monarca no backend');
+      showToast('Falha ao persistir OK do Marcos no backend');
       restoreBoard(before);
       return;
     }
@@ -1020,7 +1037,46 @@ function createCard(item, columnKey = '') {
     const dashboard = await loadDashboard();
     renderBoard(dashboard.columns || fallbackData.columns);
 
-    addLiveEvent('Monarca OK', card.dataset.title || 'Missão sem título', true, { missionKey: card.dataset.cardId || card.dataset.title, missionTitle: card.dataset.title });
+    addLiveEvent('OK do Marcos', card.dataset.title || 'Missão sem título', true, { missionKey: card.dataset.cardId || card.dataset.title, missionTitle: card.dataset.title });
+  });
+
+  card.querySelector('[data-action="respond"]')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const text = prompt(
+      'Resposta do Marcos (cole no formato OBJETIVO / ARQUIVO-ALVO / SUCESSO):',
+      ''
+    );
+    if (text == null) return;
+    const reply = text.trim();
+    if (!reply) {
+      showToast('Resposta vazia.');
+      return;
+    }
+
+    const before = snapshotBoard();
+    const fromColumn = card.closest('.column')?.dataset.column || columnKey || 'awaiting_monarca';
+
+    const ok = await persistBoardState('monarca_reply', {
+      missionId: card.dataset.missionId || card.dataset.cardId,
+      title: card.dataset.title,
+      fromColumn,
+      reply,
+    });
+
+    if (STRICT_PERSISTENCE && !ok) {
+      showToast('Falha ao salvar resposta do Marcos');
+      restoreBoard(before);
+      return;
+    }
+
+    const dashboard = await loadDashboard();
+    ingestDashboardTransitions(dashboard);
+    renderBoard(dashboard.columns || fallbackData.columns);
+
+    addLiveEvent('Resposta do Marcos', `${card.dataset.title}: contexto fornecido.`, true, {
+      missionKey: card.dataset.cardId || card.dataset.title,
+      missionTitle: card.dataset.title,
+    });
   });
 
   card.querySelector('[data-action="clarify"]')?.addEventListener('click', async (e) => {
@@ -1220,7 +1276,7 @@ function renderMobileFlow(columns) {
   // Mobile needs a flow-first view (like desktop), not hidden side panels.
   const ORDER = showFailedOnly
     ? ['failed']
-    : ['inbox', 'assigned', 'in_progress', 'review', 'needs_monarca_decision', 'done', 'failed'];
+    : ['inbox', 'assigned', 'in_progress', 'review', 'awaiting_monarca', 'proof_pending', 'done', 'failed'];
 
   const byKey = new Map((columns || []).map((c) => [normalizeColumnKey(c.name), c]));
 
@@ -1290,6 +1346,18 @@ function renderBoard(columns) {
   const isMobile = window.matchMedia('(max-width: 768px)').matches;
 
   refreshFailedBell();
+
+  // UX: if there is something blocked/pending, auto-open Live once so you notice.
+  try {
+    const blockedKeys = new Set(['awaiting_monarca', 'proof_pending', 'failed']);
+    const hasBlocked = (boardState || []).some((c) => blockedKeys.has(normalizeColumnKey(c.name || '')) && (c.items || []).length);
+    if (hasBlocked && livePanel && livePanel.classList.contains('collapsed') && localStorage.getItem('mc_live_autounhide') !== '1') {
+      livePanel.classList.remove('collapsed');
+      workspace?.classList.remove('live-collapsed');
+      localStorage.setItem('mc_live_autounhide', '1');
+      setLiveTab('history');
+    }
+  } catch (_) {}
 
   if (isMobile) {
     const counts = columnCounts(boardState);
@@ -1557,8 +1625,8 @@ async function autonomousTick() {
         const needsUserAction = exec.needsUserAction || 'Defina melhor o escopo e critério de sucesso.';
         addLiveEvent('Execução real falhou', `${first.title} não teve efetividade real (${(exec.evidence || []).join(', ')}).`, true, { missionKey: first.cardId || makeCardId(first.title), missionTitle: first.title });
         inProgress.items.shift();
-        const target = status === 'needs_monarca_decision'
-          ? ensureColumn('needs_monarca_decision', 'Needs Monarca Decision')
+        const target = status === 'proof_pending'
+          ? ensureColumn('proof_pending', 'Proof Pending')
           : ensureColumn('failed', 'Failed');
 
         const failStatus = status === 'needs_clarification' ? 'failed' : status;
