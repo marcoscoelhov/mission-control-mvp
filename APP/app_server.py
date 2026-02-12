@@ -149,8 +149,12 @@ def run_openclaw_agent_sync(agent_id, session_id, message_text, timeout_seconds=
     evidence = []
     if reply_text:
         evidence.append(('LLM: ' + reply_text.replace('\n', ' ')[:900]).strip())
+    elif stdout:
+        evidence.append(('stdout: ' + stdout.replace('\n', ' ')[:900]).strip())
     if stderr and not ok:
         evidence.append(('stderr: ' + stderr.replace('\n', ' ')[:400]).strip())
+    if ok and not evidence:
+        evidence.append('runner_ok_no_output')
 
     return {
         'ok': ok,
