@@ -891,13 +891,44 @@ class Handler(SimpleHTTPRequestHandler):
         if path == '/api/dashboard':
             data = load_data()
             build_mission_index(data)
+
+            # Watchdog: avoid missions stuck forever in "running" if the server was restarted mid-run.
+            now = now_ms()
+            stuck_ms = 12 * 60 * 1000
+
+            mutated = False
             for c in data.get('columns', []) or []:
                 for m in c.get('items', []) or []:
                     ensure_execution_defaults(m)
+
+                    ex = normalize_execution(m)
+                    if str(ex.get('status') or '').lower() == 'running':
+                        started = int(ex.get('startedAt') or 0)
+                        if started and (now - started) > stuck_ms:
+                            ex['status'] = 'failed'
+                            ex['endedAt'] = ex.get('endedAt') or now
+                            ex['updatedAt'] = now
+                            evid = list(ex.get('evidence') or [])
+                            evid.append('watchdog: marked failed after server restart / timeout')
+                            ex['evidence'] = list(dict.fromkeys([str(x) for x in evid if str(x).strip()]))
+
+                            m['execution'] = ex
+                            m['executionStatus'] = ex['status']
+                            m['effectEvidence'] = ex.get('evidence', [])
+                            m['effective'] = has_execution_proof(m)
+                            m['needsEffectiveness'] = not m['effective']
+                            m['needsUserAction'] = 'Execução ficou presa em running (provável restart). Reexecute para gerar PROOF.'
+
+                            mutated = True
+
                     tl = get_mission_timeline(data, m.get('id'))
                     m['timelineCount'] = len(tl)
                     if tl:
                         m['latestTransition'] = tl[-1]
+
+            if mutated:
+                save_data(data)
+
             return self._json(200, data)
         if path == '/api/chat':
             return self._json(200, load_chat())
