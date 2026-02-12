@@ -140,59 +140,67 @@
 
       <div class="settings-section active">
         <label class="field">
-          <span>Título da missão (opcional)</span>
-          <input type="text" id="mission-title" placeholder="Rótulo humano (o sistema nomeia como #task_N)" />
+          <span>Pedido (título opcional)</span>
+          <input type="text" id="mission-title" placeholder="Ex.: Trocar texto do header" />
         </label>
+
         <label class="field">
-          <span>Descrição (contexto)</span>
-          <textarea id="mission-desc" rows="4" placeholder="Contexto suficiente para executar"></textarea>
+          <span>Contexto</span>
+          <textarea id="mission-desc" rows="3" placeholder="Informações mínimas para executar (o que existe hoje + o que você quer)" ></textarea>
+        </label>
+
+        <label class="field">
+          <span>Critérios de sucesso (obrigatório)</span>
+          <textarea id="mission-success" rows="3" placeholder="Checklist curto. Ex.:\n- Aparece \"MISSION CONTROL\" no header\n- Sem quebrar mobile\n- PROOF anexada"></textarea>
         </label>
 
         <div class="meta-grid">
-          <label class="field">
-            <span>Tipo</span>
-            <select id="mission-type">
-              <option value="Feature" selected>Feature</option>
-              <option value="Bugfix">Bugfix</option>
-              <option value="Automacao">Automação</option>
-              <option value="Pesquisa">Pesquisa</option>
-              <option value="Monetizacao">Monetização</option>
-              <option value="Documentacao">Documentação</option>
-            </select>
-          </label>
           <label class="field">
             <span>Risco</span>
             <select id="mission-risk">
               <option value="0" selected>0 — interno/seguro (auto)</option>
               <option value="1">1 — precisa review Jarvis</option>
-              <option value="2">2 — externo (OK Monarca)</option>
+              <option value="2">2 — externo (OK Marcos)</option>
             </select>
           </label>
         </div>
 
-        <label class="field">
-          <span>Critérios de sucesso (obrigatório)</span>
-          <textarea id="mission-success" rows="3" placeholder="Ex.: 1) X funciona 2) PROOF anexada 3) Sem regressão"></textarea>
-        </label>
+        <details class="glass details" id="broadcast-advanced" style="margin-top:10px">
+          <summary class="chip" style="list-style:none; display:inline-flex; gap:8px; align-items:center;">Avançado</summary>
+          <div style="margin-top:10px">
+            <div class="meta-grid">
+              <label class="field">
+                <span>Tipo</span>
+                <select id="mission-type">
+                  <option value="Feature" selected>Feature</option>
+                  <option value="Bugfix">Bugfix</option>
+                  <option value="Automacao">Automação</option>
+                  <option value="Pesquisa">Pesquisa</option>
+                  <option value="Monetizacao">Monetização</option>
+                  <option value="Documentacao">Documentação</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Prioridade</span>
+                <select id="mission-priority">
+                  <option value="p1">P1 - Alta</option>
+                  <option value="p2" selected>P2 - Média</option>
+                  <option value="p3">P3 - Baixa</option>
+                </select>
+              </label>
+            </div>
 
-        <label class="field">
-          <span>PROOF esperado (opcional)</span>
-          <input type="text" id="mission-proof" placeholder="Ex.: output do comando, link, diff/commit hash, screenshot" />
-        </label>
+            <label class="field">
+              <span>PROOF esperado (opcional)</span>
+              <input type="text" id="mission-proof" placeholder="Ex.: link, diff/commit, screenshot, output" />
+            </label>
 
-        <div class="meta-grid">
-          <label class="field">
-            <span>Prioridade</span>
-            <select id="mission-priority">
-              <option value="p1">P1 - Alta</option>
-              <option value="p2" selected>P2 - Média</option>
-              <option value="p3">P3 - Baixa</option>
-            </select>
-          </label>
-          <label class="field"><span>Prazo</span><input type="text" id="mission-eta" value="agora" /></label>
-        </div>
-        <p class="muted">As missões entram direto no fluxo e são nomeadas automaticamente como #task_N.</p>
-        <button class="chip active" id="send-broadcast">Enviar missão para Inbox</button>
+            <label class="field"><span>Prazo</span><input type="text" id="mission-eta" value="agora" /></label>
+          </div>
+        </details>
+
+        <p class="muted">Mínimo: contexto + critérios + risco. O resto é opcional.</p>
+        <button class="chip active" id="send-broadcast">Enviar missão</button>
       </div>
     </aside>
 
@@ -240,6 +248,6 @@
       </section>
     </aside>
 
-    <script src="./script.js?v=50"></script>
+    <script src="./script.js?v=51"></script>
   </body>
 </html>

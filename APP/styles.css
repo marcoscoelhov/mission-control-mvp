@@ -580,6 +580,16 @@ body {
   display: grid;
 }
 
+.details {
+  padding: 10px;
+  border-radius: 14px;
+}
+
+.details > summary {
+  cursor: pointer;
+  user-select: none;
+}
+
 .doc-pre {
   margin: 0;
   white-space: pre-wrap;

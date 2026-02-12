@@ -1887,8 +1887,14 @@ function setupUI() {
     missionDescInput.value = '';
     if (missionSuccessInput) missionSuccessInput.value = '';
     if (missionProofInput) missionProofInput.value = '';
+    if (missionSuccessInput) missionSuccessInput.value = '';
+    if (missionProofInput) missionProofInput.value = '';
     if (missionTypeInput) missionTypeInput.value = 'Feature';
     if (missionRiskInput) missionRiskInput.value = '0';
+    try {
+      const adv = document.getElementById('broadcast-advanced');
+      if (adv) adv.open = false;
+    } catch (_) {}
     broadcastDrawer.classList.remove('open');
   });
 
