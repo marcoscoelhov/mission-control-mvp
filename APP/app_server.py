@@ -1306,6 +1306,43 @@ def enforce_done_proof(data):
     done['items'] = kept
 
 
+def enforce_locked_done(data):
+    """Keep locked cards in Done even when stale clients post older board snapshots."""
+    done = get_column(data, 'Done', 'Done')
+    locked = []
+    # collect + remove locked cards from other columns
+    for c in data.get('columns', []) or []:
+        if str(c.get('name') or '').strip().lower() == 'done':
+            continue
+        items = c.get('items') or []
+        kept = []
+        for m in items:
+            if bool(m.get('lockedDone')):
+                locked.append(m)
+            else:
+                kept.append(m)
+        c['items'] = kept
+
+    if not locked:
+        return
+
+    done_items = done.get('items') or []
+    seen = {str((x or {}).get('id') or '') for x in done_items}
+    for m in locked:
+        mid = str(m.get('id') or '')
+        ex = normalize_execution(m)
+        ex['status'] = 'effective'
+        ex['updatedAt'] = now_ms()
+        m['execution'] = ex
+        m['executionStatus'] = 'effective'
+        m['effective'] = True
+        m['needsEffectiveness'] = False
+        if mid and mid not in seen:
+            done_items.insert(0, m)
+            seen.add(mid)
+    done['items'] = done_items
+
+
 class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(BASE), **kwargs)
@@ -2162,6 +2199,7 @@ class Handler(SimpleHTTPRequestHandler):
                 append_trail_entry(mission_id or 'unknown', title, f"Card removido manualmente da coluna {from_c}.")
 
             enforce_done_proof(data)
+            enforce_locked_done(data)
             save_data(data)
             return self._json(200, {'ok': True, 'trailFile': '/MISSOES_TRAJETO.md'})
 
