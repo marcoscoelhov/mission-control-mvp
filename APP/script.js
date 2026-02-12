@@ -293,8 +293,12 @@ async function renderMissionHistory(key) {
     if (proof.agent) header.push(`AGENTE: ${proof.agent}`);
     if (proof.sessionId) header.push(`SESSION: ${proof.sessionId}`);
 
+    const evLines = ev.length
+      ? ['EVIDÊNCIAS:', ...ev.slice(0, 8).map((x) => `- ${String(x).slice(0, 220)}`)].join('\n')
+      : 'EVIDÊNCIAS: (nenhuma)';
+
     if (!tl.length) {
-      missionHistoryView.textContent = `${header.join(' · ')}\n\nSem transições registradas ainda.`;
+      missionHistoryView.textContent = `${header.join(' · ')}\n\n${evLines}\n\nSem transições registradas ainda.`;
       return;
     }
 
@@ -311,7 +315,7 @@ async function renderMissionHistory(key) {
         return `- [${at}] ${from} → ${to} (${actor}/${reason})`;
       });
 
-    missionHistoryView.textContent = `${header.join(' · ')}\n\n${lines.join('\n')}`;
+    missionHistoryView.textContent = `${header.join(' · ')}\n\n${evLines}\n\nTRAJETO:\n${lines.join('\n')}`;
     return;
   } catch (_) {
     // Fallback to local log
