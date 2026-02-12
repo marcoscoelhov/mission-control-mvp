@@ -97,11 +97,40 @@ def run_cmd(cmd, timeout_seconds=10, cwd=None):
         return {'ok': False, 'rc': 1, 'out': '', 'err': str(e)}
 
 
-def git_snapshot():
-    # Snapshot repo dirty state (for evidence criterion C: file altered + diff)
-    st = run_cmd(['git', '-C', str(REPO_ROOT), 'status', '--porcelain'], timeout_seconds=6)
-    ds = run_cmd(['git', '-C', str(REPO_ROOT), 'diff', '--stat'], timeout_seconds=6)
+def agent_workspace_dir(agent_id: str):
+    """Best-effort mapping from agent_id -> workspace directory.
+
+    Mission Control runs from workspace-stark; other agents usually have /root/.openclaw/workspace-<agent>.
+    """
+    aid = (str(agent_id or '').strip().lower() or 'stark')
+    if aid in ('stark', 'main'):
+        return REPO_ROOT
+    return Path('/root/.openclaw') / f'workspace-{aid}'
+
+
+def git_snapshot(repo_dir: Path):
+    """Snapshot repo dirty state (for evidence criterion C: file altered + diff).
+
+    If the directory is not a git repo, return gitRepo=False and empty stats."""
+    try:
+        repo_dir = Path(repo_dir)
+    except Exception:
+        repo_dir = REPO_ROOT
+
+    git_dir = repo_dir / '.git'
+    if not git_dir.exists():
+        return {
+            'gitRepo': False,
+            'repoDir': str(repo_dir),
+            'status': '',
+            'diffstat': '',
+        }
+
+    st = run_cmd(['git', '-C', str(repo_dir), 'status', '--porcelain'], timeout_seconds=6)
+    ds = run_cmd(['git', '-C', str(repo_dir), 'diff', '--stat'], timeout_seconds=6)
     return {
+        'gitRepo': True,
+        'repoDir': str(repo_dir),
         'status': st.get('out', ''),
         'diffstat': ds.get('out', ''),
     }
@@ -1093,25 +1122,37 @@ class Handler(SimpleHTTPRequestHandler):
             msg = mission_openclaw_text(mission)
 
             def worker():
-                before_git = git_snapshot()
+                # Criterion C must verify the workspace where the responsible agent operates.
+                exec_repo = agent_workspace_dir(agent_id)
+                before_git = git_snapshot(exec_repo)
                 try:
                     result = run_openclaw_agent_sync(agent_id=agent_id, session_id=mission_id, message_text=msg)
                 except Exception as e:
                     result = {'ok': False, 'evidence': [f'runner_error: {e}'], 'reply': ''}
-                after_git = git_snapshot()
+                after_git = git_snapshot(exec_repo)
 
-                # Evidence criterion C: must alter files + have a diff.
-                changed = (after_git.get('status') or '').strip() != (before_git.get('status') or '').strip()
-                has_diff = bool((after_git.get('diffstat') or '').strip())
-                c_ok = changed and has_diff
-
-                git_evidence = []
-                if changed:
-                    git_evidence.append('git: changes detected')
-                if has_diff:
-                    git_evidence.append('git diff --stat:\n' + after_git.get('diffstat', '')[:900])
+                # Evidence criterion C:
+                # - If the executor workspace is a git repo: require an actual diff.
+                # - If it's NOT a git repo: we can't diff; accept runner ok as long as we have evidence.
+                if after_git.get('gitRepo'):
+                    changed = (after_git.get('status') or '').strip() != (before_git.get('status') or '').strip()
+                    has_diff = bool((after_git.get('diffstat') or '').strip())
+                    c_ok = changed and has_diff
                 else:
-                    git_evidence.append('git: no diff detected')
+                    changed = False
+                    has_diff = False
+                    c_ok = bool(result.get('ok')) and bool(result.get('evidence'))
+
+                git_evidence = [f"exec_repo: {after_git.get('repoDir')}"]
+                if after_git.get('gitRepo'):
+                    if changed:
+                        git_evidence.append('git: changes detected')
+                    if has_diff:
+                        git_evidence.append('git diff --stat:\n' + after_git.get('diffstat', '')[:900])
+                    else:
+                        git_evidence.append('git: no diff detected')
+                else:
+                    git_evidence.append('git: repo not detected (skipping diff-based proof)')
 
                 data2 = load_data()
                 col2, idx2, mission2 = find_mission_ref(data2, mission_id)
@@ -1146,7 +1187,8 @@ class Handler(SimpleHTTPRequestHandler):
                 else:
                     if ex2['status'] == 'needs_monarca_decision':
                         mission2['needsUserAction'] = (
-                            'Decisão do Monarca: forneça o asset (SVG/PNG/link) ou autorize placeholder + confirme "patch local ok".'
+                            'Proof incompleta: não detectei mudanças verificáveis no workspace do executor (ver exec_repo nas evidências). '
+                            'Ajuste o alvo (arquivo/tarefa), reexecute, ou autorize explicitamente aceitar proof não-git (ex.: screenshot/log) e reclassificar como efetiva.'
                         )
                     else:
                         mission2['needsUserAction'] = 'Falha de execução. Ver evidências e reexecutar.'
