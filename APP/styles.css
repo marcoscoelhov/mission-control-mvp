@@ -1375,7 +1375,11 @@ body.autonomous-on #auto-delegate {
   .column-head {
     padding: 8px;
     font-size: 10px;
-    letter-spacing: 0.07em;
+    letter-spacing: 0.06em;
+  }
+
+  .column-head span:last-child {
+    opacity: 0.75;
   }
 
   .cards {
@@ -1393,9 +1397,18 @@ body.autonomous-on #auto-delegate {
   .card {
     padding: 8px;
     border-radius: 8px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-left: 1px solid rgba(126, 249, 207, 0.2);
-    background: rgba(16, 20, 29, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-left: 0;
+    background: rgba(16, 20, 29, 0.86);
+  }
+
+  /* Trello-like: menos "chrome" no card */
+  .score-row {
+    display: none;
+  }
+
+  .card-foot {
+    opacity: 0.9;
   }
 
   .card h3 {
@@ -1424,6 +1437,13 @@ body.autonomous-on #auto-delegate {
   .card-actions {
     margin-top: 6px;
     gap: 5px;
+  }
+
+  .approve-row .chip.mini,
+  .card-actions .chip.mini {
+    min-height: 28px;
+    padding: 4px 8px;
+    border-radius: 999px;
   }
 
   .toast-wrap {
