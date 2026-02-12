@@ -190,3 +190,137 @@ Responsabilidades:
    ↓
 (Oráculo) Insights → novas tarefas no board
 ```
+
+---
+
+# Upgrade 1 — Definição de DONE (por tipo de missão)
+
+**Regra-mãe:** *DONE só existe quando há evidência.* Se não dá pra provar, não está feito.
+
+Para cada missão, escolha um **tipo** (um só) e use o checklist correspondente.
+
+## Tipo: Feature (produto/dashboard)
+DONE quando:
+- [ ] Funciona no fluxo principal (happy path) e pelo menos 1 edge case relevante
+- [ ] UI/UX está consistente com o padrão do Mission Control
+- [ ] Tracking/timeline registra o que aconteceu (estado + evidência)
+- [ ] Não quebra o board (estado reflete realidade)
+- [ ] Evidência: link/print + output de teste manual (passos) ou pequeno vídeo/gif
+
+## Tipo: Bugfix
+DONE quando:
+- [ ] Bug reproduzido (passos documentados)
+- [ ] Causa raiz descrita em 1–3 linhas
+- [ ] Correção aplicada
+- [ ] Repro do bug agora falha (não acontece mais)
+- [ ] Evidência: antes/depois (log, print, ou vídeo) + referência de commit/diff
+
+## Tipo: Automação (cron/agente)
+DONE quando:
+- [ ] Idempotente (rodar 2x não estraga nada)
+- [ ] Timeouts e falhas são tratadas (erro vira estado/alerta)
+- [ ] Critério de sucesso objetivo (ex.: “card movido”, “proof salva”, “job ok”)
+- [ ] Observabilidade mínima (log/registro no timeline)
+- [ ] Evidência: execução real com output + estado final no board
+
+## Tipo: Pesquisa/Análise (R&D)
+DONE quando:
+- [ ] Pergunta respondida objetivamente
+- [ ] Recomendação final (decisão sugerida) com tradeoffs
+- [ ] Próximo passo executável (1–3 tarefas)
+- [ ] Evidência: nota curta (1–2 páginas) + links essenciais
+
+## Tipo: Monetização/Receita
+DONE quando:
+- [ ] Hipótese de receita definida
+- [ ] Canal + mecanismo + métrica definida (ex.: conversão, CAC, LTV)
+- [ ] Experimento desenhado (30–120 min) ou implementado
+- [ ] Resultado medido (mesmo que negativo)
+- [ ] Evidência: números + fonte (planilha, analytics, log)
+
+## Tipo: Documentação
+DONE quando:
+- [ ] Documento permite execução por outra pessoa/agente sem contexto extra
+- [ ] “Como validar” está incluído
+- [ ] Links/paths corretos
+- [ ] Evidência: doc revisado (Jarvis) e aplicado numa tarefa real
+
+---
+
+# Upgrade 2 — Níveis de risco & regras de autonomia
+
+**Objetivo:** autonomia máxima sem perder controle. Isso vira um “cinto de segurança”.
+
+## Risco 0 — Interno/seguro (AUTO)
+Pode executar sem pedir ao Monarca:
+- refatorar UI local, melhorar layout/UX
+- criar/editar docs internas
+- organizar arquivos do workspace
+- rodar status/diagnósticos
+- criar cards/tarefas internas
+
+Requisito: registrar evidência no timeline/relatório (e/ou no board).
+
+## Risco 1 — Produto/fluxo (REVIEW obrigatório)
+Exige **review do Jarvis** antes de considerar DONE:
+- muda contrato de API
+- muda estados do board / regras do pipeline
+- altera comportamento de execução (runner)
+- mexe em automações recorrentes
+
+Requisito: checklist + evidência + decisão explícita de “aprovado/vetado”.
+
+## Risco 2 — Externo (OK do Monarca)
+**Nunca** executar sem consentimento explícito do Marcos:
+- postar em redes sociais
+- falar com terceiros
+- enviar mensagens/emails para pessoas fora do sistema
+- gastar dinheiro / assinar serviços / rodar ads
+- ações irreversíveis fora do ambiente local
+
+---
+
+# Upgrade 3 — Contrato de handoff (template padrão de missão)
+
+Copie/cole isso como bloco obrigatório em toda missão criada pelo Stark.
+
+## TEMPLATE — MISSÃO
+**Título:**
+
+**Tipo:** (Feature | Bugfix | Automação | Pesquisa | Monetização | Documentação)
+
+**Objetivo (1 frase):**
+
+**Por que isso aumenta autonomia?**
+
+**Por que isso aumenta renda (direto/indireto)?**
+
+**Critérios de sucesso (checklist):**
+- [ ]
+- [ ]
+
+**Escopo (o que entra):**
+
+**Fora de escopo (o que NÃO entra):**
+
+**Risco:** (0 | 1 | 2)  
+**Aprovação necessária:** (nenhuma | Jarvis | Marcos)
+
+**Plano (passos):**
+1)
+2)
+3)
+
+**Responsável:** (agente)
+
+**Dependências:**
+
+**Evidências esperadas (PROOF):**
+- (ex.: output, link, print, commit hash, timeline)
+
+**Notas de execução:**
+- timeouts
+- fallback
+- como reverter
+
+---
