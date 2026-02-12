@@ -571,6 +571,8 @@ function normalizeCard(item) {
       status: item.executionStatus || 'pending',
       evidence: Array.isArray(item.effectEvidence) ? item.effectEvidence : [],
     },
+    comments: Array.isArray(item.comments) ? item.comments : [],
+    subtasks: Array.isArray(item.subtasks) ? item.subtasks : [],
   };
 }
 
@@ -1119,6 +1121,8 @@ function createCard(item, columnKey = '') {
     ? `<button class="chip mini warning" data-action="respond">Responder agora</button>`
     : '';
   const runBtn = `<button class="chip mini" data-action="run">Executar</button>`;
+  const commentBtn = `<button class="chip mini" data-action="comment">Comentário</button>`;
+  const subtaskBtn = `<button class="chip mini" data-action="subtask">Subtask</button>`;
   const deleteBtn = `<button class="chip mini danger" data-action="delete">Excluir</button>`;
 
   card.innerHTML = `
@@ -1137,8 +1141,9 @@ function createCard(item, columnKey = '') {
       <span>${escapeHtml(c.eta)} ago</span>
     </div>
     <div class="approve-row">${stageBadge} ${typeBadge} ${riskBadge} ${gateBadge} ${approveBtn} ${monarcaBtn} ${effectiveness} ${executionBadge} ${oracleBadge}</div>
+    <div class="muted" style="margin-top:6px">Subtasks: ${c.subtasks.length} · Comments: ${c.comments.length}</div>
     ${c.needsUserAction ? `<div class="empty-column" style="margin-top:8px">Ação necessária: ${escapeHtml(c.needsUserAction)}</div>` : ''}
-    <div class="card-actions">${respondBtn} ${runBtn} ${deleteBtn}</div>
+    <div class="card-actions">${respondBtn} ${runBtn} ${commentBtn} ${subtaskBtn} ${deleteBtn}</div>
   `;
 
   card.querySelector('[data-action="approve"]')?.addEventListener('click', async (e) => {
@@ -1319,6 +1324,36 @@ function createCard(item, columnKey = '') {
     await renderMissionHistory(missionId);
 
     addLiveEvent('Execução (LLM)', `${card.dataset.title}: ${res.status || 'ok'}`, true, { missionKey: missionId, missionTitle: card.dataset.title });
+  });
+
+  card.querySelector('[data-action="comment"]')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const text = prompt('Comentário da missão:', '');
+    if (text == null || !text.trim()) return;
+    const missionId = card.dataset.missionId || card.dataset.cardId;
+    const res = await apiPost('/api/missions/comments', { missionId, text: text.trim(), author: 'Marcos' });
+    if (!res.ok) {
+      showToast('Falha ao salvar comentário');
+      return;
+    }
+    const dashboard = await loadDashboard();
+    renderBoard(dashboard.columns || fallbackData.columns);
+    addLiveEvent('Comentário', `${card.dataset.title}: comentário registrado.`, true, { missionKey: missionId, missionTitle: card.dataset.title });
+  });
+
+  card.querySelector('[data-action="subtask"]')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const text = prompt('Nova subtask:', '');
+    if (text == null || !text.trim()) return;
+    const missionId = card.dataset.missionId || card.dataset.cardId;
+    const res = await apiPost('/api/missions/subtasks', { missionId, text: text.trim(), done: false });
+    if (!res.ok) {
+      showToast('Falha ao salvar subtask');
+      return;
+    }
+    const dashboard = await loadDashboard();
+    renderBoard(dashboard.columns || fallbackData.columns);
+    addLiveEvent('Subtask', `${card.dataset.title}: subtask adicionada.`, true, { missionKey: missionId, missionTitle: card.dataset.title });
   });
 
   card.querySelector('[data-action="delete"]')?.addEventListener('click', async (e) => {

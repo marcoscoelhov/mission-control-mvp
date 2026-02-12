@@ -1618,6 +1618,8 @@ class Handler(SimpleHTTPRequestHandler):
                     'status': 'pending',
                     'evidence': [],
                 },
+                'comments': payload.get('comments') if isinstance(payload.get('comments'), list) else [],
+                'subtasks': payload.get('subtasks') if isinstance(payload.get('subtasks'), list) else [],
             }
 
             inbox['items'] = [mission] + (inbox.get('items', []) or [])
@@ -1647,6 +1649,48 @@ class Handler(SimpleHTTPRequestHandler):
                 'needsClarification': False,
                 'triageSource': mission.get('triageSource', 'disabled'),
             })
+
+        if self.path == '/api/missions/comments':
+            payload = self._read_json()
+            mission_id = str(payload.get('missionId') or '').strip()
+            text = str(payload.get('text') or '').strip()
+            author = str(payload.get('author') or 'Marcos').strip()
+            if not mission_id or not text:
+                return self._json(400, {'ok': False, 'error': 'invalid_payload'})
+
+            data = load_data()
+            col, idx, mission = find_mission_ref(data, mission_id)
+            if mission is None:
+                return self._json(404, {'ok': False, 'error': 'mission_not_found'})
+
+            comments = mission.get('comments') if isinstance(mission.get('comments'), list) else []
+            comments.append({'id': f"c_{uuid.uuid4().hex[:8]}", 'text': text, 'author': author, 'at': now_ms()})
+            mission['comments'] = comments[-100:]
+            col['items'][idx] = mission
+            append_trail_entry(mission_id, mission.get('title', 'Missão'), f"Comentário adicionado por {author}.")
+            save_data(data)
+            return self._json(200, {'ok': True, 'missionId': mission_id, 'count': len(mission['comments'])})
+
+        if self.path == '/api/missions/subtasks':
+            payload = self._read_json()
+            mission_id = str(payload.get('missionId') or '').strip()
+            text = str(payload.get('text') or '').strip()
+            done = bool(payload.get('done') or False)
+            if not mission_id or not text:
+                return self._json(400, {'ok': False, 'error': 'invalid_payload'})
+
+            data = load_data()
+            col, idx, mission = find_mission_ref(data, mission_id)
+            if mission is None:
+                return self._json(404, {'ok': False, 'error': 'mission_not_found'})
+
+            subtasks = mission.get('subtasks') if isinstance(mission.get('subtasks'), list) else []
+            subtasks.append({'id': f"s_{uuid.uuid4().hex[:8]}", 'text': text, 'done': done, 'at': now_ms()})
+            mission['subtasks'] = subtasks[-100:]
+            col['items'][idx] = mission
+            append_trail_entry(mission_id, mission.get('title', 'Missão'), 'Subtask adicionada.')
+            save_data(data)
+            return self._json(200, {'ok': True, 'missionId': mission_id, 'count': len(mission['subtasks'])})
 
         if self.path == '/api/missions/proof':
             payload = self._read_json()
