@@ -79,6 +79,7 @@ const saveGeneralBtn = document.getElementById('save-general');
 const toastWrap = document.getElementById('toast-wrap');
 const throughputValue = document.getElementById('throughput-value');
 const missionHistoryView = document.getElementById('mission-history-view');
+const governanceView = document.getElementById('governance-view');
 const agentsActiveValue = document.getElementById('agents-active-value');
 const tasksQueueValue = document.getElementById('tasks-queue-value');
 
@@ -619,6 +620,44 @@ async function loadTelemetry() {
     }
   } catch (_) {}
   return telemetryState;
+}
+
+async function loadGovernanceSummary() {
+  try {
+    return await fetchJson('/api/governance/summary');
+  } catch (_) {
+    return { ok: false, rules: {}, approvals: [], pendingApprovals: [], epics: [] };
+  }
+}
+
+function renderGovernance(summary) {
+  if (!governanceView) return;
+  const rules = summary?.rules || {};
+  const pending = Array.isArray(summary?.pendingApprovals) ? summary.pendingApprovals : [];
+  const decisions = Array.isArray(summary?.approvals) ? summary.approvals : [];
+  const epics = Array.isArray(summary?.epics) ? summary.epics : [];
+
+  const yesNo = (v) => (v ? '✅' : '❌');
+  governanceView.innerHTML = `
+    <div class="doc-block">
+      <h4>Regras por board</h4>
+      <p class="muted">Approval para Done: ${yesNo(Boolean(rules.requireApprovalForDone))}</p>
+      <p class="muted">Review antes de Done: ${yesNo(Boolean(rules.requireReviewBeforeDone))}</p>
+      <p class="muted">Bloquear move com approval pendente: ${yesNo(Boolean(rules.blockMoveIfPendingApproval))}</p>
+    </div>
+    <div class="doc-block">
+      <h4>Approvals pendentes (${pending.length})</h4>
+      <pre>${pending.slice(0, 20).map((p) => `• ${p.title || p.id} [${p.column}] owner=${p.owner || '-'} risk=${p.riskLevel ?? 0}`).join('\n') || 'Nenhuma pendência.'}</pre>
+    </div>
+    <div class="doc-block">
+      <h4>EPICs (${epics.length})</h4>
+      <pre>${epics.slice(0, 20).map((e) => `• ${e.title || e.id} | epicId=${e.epicId || '-'} | filhos=${(e.children || []).length}`).join('\n') || 'Nenhum EPIC mapeado.'}</pre>
+    </div>
+    <div class="doc-block">
+      <h4>Trilha de decisão (últimas ${Math.min(20, decisions.length)})</h4>
+      <pre>${decisions.slice(-20).reverse().map((a) => `• ${new Date(a.at || Date.now()).toLocaleString()} | ${a.title || a.missionId} | ${a.decision} por ${a.actor}${a.reason ? ` — ${a.reason}` : ''}`).join('\n') || 'Sem decisões registradas.'}</pre>
+    </div>
+  `;
 }
 
 async function checkBackendConnection() {
@@ -1794,6 +1833,10 @@ function setLiveTab(tab) {
   document.querySelectorAll('#live-toolbar .chip').forEach((btn) => btn.classList.toggle('active', btn.dataset.liveTab === tab));
   document.getElementById('live-history-tab')?.classList.toggle('live-tab-active', tab === 'history');
   document.getElementById('live-agent-tab')?.classList.toggle('live-tab-active', tab === 'agent');
+  document.getElementById('live-governance-tab')?.classList.toggle('live-tab-active', tab === 'governance');
+  if (tab === 'governance') {
+    loadGovernanceSummary().then(renderGovernance).catch(() => {});
+  }
 }
 
 function startRealtimeRefresh() {
@@ -1808,6 +1851,10 @@ function startRealtimeRefresh() {
 
     const [agents] = await Promise.all([loadAgentsDetails(), loadTelemetry()]);
     if (agents.length) renderAgents(agents);
+    if (document.querySelector('#live-toolbar .chip.active')?.dataset?.liveTab === 'governance') {
+      const gov = await loadGovernanceSummary();
+      renderGovernance(gov);
+    }
     if (chatDrawer?.classList.contains('open')) await refreshAgentChat();
   }, refreshMs);
 }

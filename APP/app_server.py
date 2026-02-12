@@ -46,6 +46,12 @@ DEFAULT_DATA = {
     'transitionKeys': {},
     'telemetryCache': {'updatedAt': 0, 'payload': {}},
     'taskSeq': 0,
+    'boardRules': {
+        'requireApprovalForDone': True,
+        'requireReviewBeforeDone': True,
+        'blockMoveIfPendingApproval': True,
+    },
+    'approvals': [],
 }
 
 
@@ -588,6 +594,14 @@ def load_data():
     # ensure new keys exist
     if not isinstance(data.get('missionRuns'), dict):
         data['missionRuns'] = {}
+    if not isinstance(data.get('boardRules'), dict):
+        data['boardRules'] = {
+            'requireApprovalForDone': True,
+            'requireReviewBeforeDone': True,
+            'blockMoveIfPendingApproval': True,
+        }
+    if not isinstance(data.get('approvals'), list):
+        data['approvals'] = []
     return data
 
 
@@ -1390,6 +1404,54 @@ class Handler(SimpleHTTPRequestHandler):
                 'runs': runs,
                 'lastRun': last_run,
             })
+        if path == '/api/governance/summary':
+            data = load_data()
+            rules = data.get('boardRules') or {}
+
+            cards = []
+            for col in data.get('columns', []) or []:
+                col_name = col.get('name', '')
+                for m in col.get('items', []) or []:
+                    cards.append({
+                        'id': m.get('id'),
+                        'title': m.get('title'),
+                        'column': col_name,
+                        'owner': m.get('owner'),
+                        'riskLevel': int(m.get('riskLevel') or 0),
+                        'approved': bool(m.get('approved')),
+                        'monarcaOk': bool(m.get('monarcaOk')),
+                        'approvalId': m.get('approvalId'),
+                        'approvalStatus': m.get('approvalStatus') or ('approved' if bool(m.get('approved')) else 'pending'),
+                        'epicId': m.get('epicId') or m.get('epic') or None,
+                        'parentId': m.get('parentId') or None,
+                    })
+
+            pending = [c for c in cards if c.get('approvalStatus') in ('pending', 'requested')]
+
+            epic_children = {}
+            for c in cards:
+                pid = c.get('parentId')
+                if pid:
+                    epic_children.setdefault(pid, []).append(c.get('id'))
+
+            epics = []
+            for c in cards:
+                if c.get('epicId') and not c.get('parentId'):
+                    epics.append({
+                        'id': c.get('id'),
+                        'title': c.get('title'),
+                        'epicId': c.get('epicId'),
+                        'children': epic_children.get(c.get('id'), []),
+                    })
+
+            return self._json(200, {
+                'ok': True,
+                'rules': rules,
+                'approvals': data.get('approvals') or [],
+                'pendingApprovals': pending,
+                'epics': epics,
+            })
+
         if path == '/api/openclaw/agents/details':
             details = BASE / 'openclaw-agents-details.json'
             if not details.exists():
@@ -1864,8 +1926,29 @@ class Handler(SimpleHTTPRequestHandler):
                 from_c = payload.get('fromColumn', '?')
                 to_c = payload.get('toColumn', '?')
 
-                # Guard rails: DONE requires proof + approvals depending on risk.
-                if str(to_c).strip().lower() == 'done' and mission_ref is not None:
+                # Guard rails controlled by board rules.
+                rules = data.get('boardRules') or {}
+                to_key = str(to_c).strip().lower().replace(' ', '_')
+                from_key = str(from_c).strip().lower().replace(' ', '_')
+
+                if bool(rules.get('blockMoveIfPendingApproval')) and mission_ref is not None:
+                    ap_status = str(mission_ref.get('approvalStatus') or '').lower().strip()
+                    if ap_status in ('pending', 'requested') and to_key not in ('inbox', 'assigned'):
+                        return self._json(409, {
+                            'ok': False,
+                            'error': 'move_blocked_pending_approval',
+                            'message': 'Movimento bloqueado: aprovação pendente para este card.',
+                        })
+
+                # DONE requires proof + approvals depending on risk.
+                if to_key == 'done' and mission_ref is not None:
+                    if bool(rules.get('requireReviewBeforeDone')) and from_key != 'review':
+                        return self._json(409, {
+                            'ok': False,
+                            'error': 'done_requires_review',
+                            'message': 'DONE bloqueado: card deve passar por Review antes de concluir.',
+                        })
+
                     risk = int(mission_ref.get('riskLevel') or 0)
                     if not has_execution_proof(mission_ref):
                         return self._json(409, {
@@ -1873,18 +1956,19 @@ class Handler(SimpleHTTPRequestHandler):
                             'error': 'done_requires_proof',
                             'message': 'DONE bloqueado: falta PROOF (execution.status=effective + evidence[]). Execute e gere evidências reais antes de concluir.',
                         })
-                    if risk >= 1 and not bool(mission_ref.get('approved')):
-                        return self._json(409, {
-                            'ok': False,
-                            'error': 'done_requires_jarvis',
-                            'message': 'DONE bloqueado: missão Risco 1 exige aprovação do Jarvis antes de concluir.',
-                        })
-                    if risk >= 2 and not bool(mission_ref.get('monarcaOk')):
-                        return self._json(409, {
-                            'ok': False,
-                            'error': 'done_requires_monarca',
-                            'message': 'DONE bloqueado: missão Risco 2 exige OK explícito do Monarca antes de concluir.',
-                        })
+                    if bool(rules.get('requireApprovalForDone')):
+                        if risk >= 1 and not bool(mission_ref.get('approved')):
+                            return self._json(409, {
+                                'ok': False,
+                                'error': 'done_requires_jarvis',
+                                'message': 'DONE bloqueado: missão Risco 1 exige aprovação do Jarvis antes de concluir.',
+                            })
+                        if risk >= 2 and not bool(mission_ref.get('monarcaOk')):
+                            return self._json(409, {
+                                'ok': False,
+                                'error': 'done_requires_monarca',
+                                'message': 'DONE bloqueado: missão Risco 2 exige OK explícito do Monarca antes de concluir.',
+                            })
 
                 record_transition(data, mission_id or 'unknown', from_c, to_c, actor=actor, reason='manual_move', title=title, transition_id=transition_id)
                 append_trail_entry(mission_id or 'unknown', title, f"Movida de {from_c} para {to_c}.")
@@ -2081,6 +2165,52 @@ class Handler(SimpleHTTPRequestHandler):
             save_data(data)
 
             return self._json(200, {'ok': True, 'missionId': mission_id, 'title': mission.get('title'), 'requestedTitle': requested_title})
+
+        if self.path == '/api/governance/rules':
+            payload = self._read_json()
+            data = load_data()
+            rules = data.get('boardRules') or {}
+            for k in ('requireApprovalForDone', 'requireReviewBeforeDone', 'blockMoveIfPendingApproval'):
+                if k in payload:
+                    rules[k] = bool(payload.get(k))
+            data['boardRules'] = rules
+            save_data(data)
+            return self._json(200, {'ok': True, 'rules': rules})
+
+        if self.path == '/api/governance/approvals/decision':
+            payload = self._read_json()
+            mission_id = str(payload.get('missionId') or '').strip()
+            decision = str(payload.get('decision') or '').strip().lower()
+            actor = str(payload.get('actor') or 'jarvis').strip()
+            reason = str(payload.get('reason') or '').strip()
+            if not mission_id or decision not in ('approved', 'rejected'):
+                return self._json(400, {'ok': False, 'error': 'invalid_payload'})
+
+            data = load_data()
+            col, idx, mission = find_mission_ref(data, mission_id)
+            if mission is None:
+                return self._json(404, {'ok': False, 'error': 'mission_not_found'})
+
+            mission['approvalStatus'] = decision
+            if decision == 'approved':
+                mission['approved'] = True
+            if col is not None and idx is not None:
+                col['items'][idx] = mission
+
+            approvals = data.get('approvals') or []
+            approvals.append({
+                'id': f"apr_{uuid.uuid4().hex[:10]}",
+                'missionId': mission_id,
+                'title': mission.get('title', ''),
+                'decision': decision,
+                'actor': actor,
+                'reason': reason,
+                'at': now_ms(),
+            })
+            data['approvals'] = approvals
+            append_trail_entry(mission_id, mission.get('title', 'Missão'), f"Approval {decision} por {actor}. {reason}".strip())
+            save_data(data)
+            return self._json(200, {'ok': True, 'missionId': mission_id, 'approvalStatus': decision})
 
         if self.path == '/api/autonomous/mode':
             payload = self._read_json()
