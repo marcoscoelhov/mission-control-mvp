@@ -1347,8 +1347,20 @@ function renderBoard(columns) {
 
       if (toColumn === 'done') {
         const cardData = serializeCard(draggedCard);
+        const risk = Number(draggedCard.dataset.riskLevel || 0);
+        const approved = draggedCard.dataset.approved === '1';
+        const monarcaOk = draggedCard.dataset.monarcaOk === '1';
+
         if (!hasExecutionProof(cardData)) {
-          showToast('Done bloqueado: falta executionProof (status effective + evidence).');
+          showToast('Done bloqueado: falta PROOF (execution.status=effective + evidence).');
+          return;
+        }
+        if (risk >= 1 && !approved) {
+          showToast('Done bloqueado: Risco 1 exige aprovação do Jarvis.');
+          return;
+        }
+        if (risk >= 2 && !monarcaOk) {
+          showToast('Done bloqueado: Risco 2 exige OK do Monarca.');
           return;
         }
       }
