@@ -1565,6 +1565,68 @@ class Handler(SimpleHTTPRequestHandler):
             save_chat(chat)
             return self._json(200, {'ok': True, 'message': msg})
 
+        if self.path == '/api/agents/command':
+            payload = self._read_json()
+            to = str(payload.get('to') or '').strip().lower() or 'stark'
+            cmd = str(payload.get('cmd') or '').strip()
+            risk = int(payload.get('riskLevel') or 0)
+            success = str(payload.get('successCriteria') or '').strip() or 'Entrega registrada no Live + evidências anexadas.'
+            if not cmd:
+                return self._json(400, {'ok': False, 'error': 'empty_cmd', 'message': 'Comando vazio.'})
+
+            data = load_data()
+            assigned = get_column(data, 'Assigned', 'Assigned')
+
+            mission_id = f"m_{uuid.uuid4().hex[:12]}"
+            requested_title = f"CMD → {to}: {cmd[:42].strip()}" + ('…' if len(cmd) > 42 else '')
+            title = next_task_title(data)
+            desc = (
+                f"[Comando do Marcos]\n"
+                f"PARA: {to}\n"
+                f"RISCO: {risk}\n"
+                f"COMANDO:\n{cmd}\n\n"
+                f"CRITÉRIO DE SUCESSO:\n{success}"
+            )
+
+            mission = {
+                'id': mission_id,
+                'cardId': mission_id,
+                'title': title,
+                'requestedTitle': requested_title,
+                'desc': desc,
+                'missionType': 'Automacao' if 'auto' in cmd.lower() else 'Feature',
+                'riskLevel': risk,
+                'successCriteria': success,
+                'proofExpected': '',
+                'monarcaOk': True,
+                'owner': to.title() if to != 'oraculo' else 'Oráculo',
+                # Marcos-originated commands are implicitly approved for moving into execution.
+                'approved': True,
+                'triageSource': 'command',
+                'createdAt': now_ms(),
+                'executed': False,
+                'effective': False,
+                'needsEffectiveness': True,
+                'needsUserAction': '',
+                'execution': {
+                    'sessionId': None,
+                    'agent': to,
+                    'startedAt': now_ms(),
+                    'endedAt': None,
+                    'updatedAt': now_ms(),
+                    'status': 'pending',
+                    'evidence': [],
+                },
+            }
+
+            assigned['items'] = [mission] + (assigned.get('items', []) or [])
+            record_transition(data, mission_id, 'marcos', 'assigned', actor='marcos', reason='command_created', title=mission.get('title', 'Missão'))
+            append_trail_entry(mission_id, mission.get('title', 'Missão'), 'Comando criado pelo Marcos via dashboard (Comandos).')
+            build_mission_index(data)
+            save_data(data)
+
+            return self._json(200, {'ok': True, 'missionId': mission_id, 'title': mission.get('title'), 'requestedTitle': requested_title})
+
         if self.path == '/api/autonomous/mode':
             payload = self._read_json()
             enabled = bool(payload.get('enabled') or payload.get('auto_exec_enabled'))

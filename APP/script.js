@@ -29,9 +29,21 @@ const openChatBtn = document.getElementById('open-chat');
 const chatDrawer = document.getElementById('chat-drawer');
 const closeChatBtn = document.getElementById('close-chat');
 const chatFeed = document.getElementById('chat-feed');
-const chatFromInput = document.getElementById('chat-from');
-const chatTextInput = document.getElementById('chat-text');
-const sendChatBtn = document.getElementById('send-chat');
+const cmdToInput = document.getElementById('cmd-to');
+const cmdTextInput = document.getElementById('cmd-text');
+const cmdRiskInput = document.getElementById('cmd-risk');
+const cmdSuccessInput = document.getElementById('cmd-success');
+const sendCmdBtn = document.getElementById('send-cmd');
+const cmdFeed = document.getElementById('cmd-feed');
+
+const agentCfgTabs = [...document.querySelectorAll('#chat-drawer .settings-tabs .chip')];
+const cmdTab = document.getElementById('tab-commands');
+const agentCfgTab = document.getElementById('tab-agentcfg');
+
+const agentCfgId = document.getElementById('agentcfg-id');
+const agentCfgEnabled = document.getElementById('agentcfg-enabled');
+const agentCfgNotes = document.getElementById('agentcfg-notes');
+const saveAgentCfgBtn = document.getElementById('save-agentcfg');
 const missionTitleInput = document.getElementById('mission-title');
 const missionDescInput = document.getElementById('mission-desc');
 const missionTypeInput = document.getElementById('mission-type');
@@ -703,35 +715,37 @@ async function runMissionReal(card) {
   }
 }
 
-async function loadAgentChat() {
+function setChatTab(tab = 'commands') {
+  const t = String(tab || 'commands');
+  agentCfgTabs.forEach((btn) => btn.classList.toggle('active', btn.dataset.tab === t));
+  cmdTab?.classList.toggle('active', t === 'commands');
+  agentCfgTab?.classList.toggle('active', t === 'agentcfg');
+}
+
+function loadAgentCfg(agentId = 'stark') {
+  const raw = localStorage.getItem(`mc_agentcfg_${agentId}`);
+  if (!raw) return { enabled: true, notes: '' };
   try {
-    const res = await fetch('/api/chat', { cache: 'no-store' });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return Array.isArray(data.messages) ? data.messages : [];
+    const parsed = JSON.parse(raw);
+    return {
+      enabled: parsed.enabled !== false,
+      notes: String(parsed.notes || ''),
+    };
   } catch (_) {
-    return [];
+    return { enabled: true, notes: '' };
   }
 }
 
-function renderAgentChat(messages) {
-  if (!chatFeed) return;
-  chatFeed.innerHTML = '';
-  if (!messages.length) {
-    chatFeed.innerHTML = '<p class="muted">Sem mensagens ainda.</p>';
-    return;
-  }
-  messages.slice().reverse().forEach((m) => {
-    const item = document.createElement('article');
-    item.className = 'feed-item';
-    item.innerHTML = `<strong>${escapeHtml(m.from || 'Agente')}</strong><p>${escapeHtml(m.text || '')}</p>`;
-    chatFeed.appendChild(item);
-  });
+function saveAgentCfg(agentId = 'stark', cfg = {}) {
+  localStorage.setItem(`mc_agentcfg_${agentId}`, JSON.stringify(cfg));
 }
 
-async function refreshAgentChat() {
-  const msgs = await loadAgentChat();
-  renderAgentChat(msgs);
+function renderCmdFeed(lines = []) {
+  if (!cmdFeed) return;
+  const out = (lines || []).slice(-6);
+  cmdFeed.innerHTML = out.length
+    ? out.map((l) => `<p class="muted" style="margin:6px 0">${escapeHtml(l)}</p>`).join('')
+    : '<p class="muted">Dica: use isso ao invés de “chat”. Vira card rastreável.</p>';
 }
 
 function refreshInboxChip() {
@@ -1787,28 +1801,66 @@ function setupUI() {
     chatDrawer?.classList.add('open');
     broadcastDrawer?.classList.remove('open');
     settingsDrawer?.classList.remove('open');
-    await refreshAgentChat();
+    setChatTab('commands');
+    renderCmdFeed(['Pronto. Crie uma missão delegada aqui.']);
+
+    // Load default agent cfg
+    const id = (agentCfgId?.value || 'stark').trim();
+    const cfg = loadAgentCfg(id);
+    if (agentCfgEnabled) agentCfgEnabled.checked = cfg.enabled;
+    if (agentCfgNotes) agentCfgNotes.value = cfg.notes;
   });
   closeChatBtn?.addEventListener('click', () => chatDrawer?.classList.remove('open'));
-  sendChatBtn?.addEventListener('click', async () => {
-    const from = (chatFromInput?.value || 'Stark').trim();
-    const text = (chatTextInput?.value || '').trim();
-    if (!text) return;
-    try {
-      const res = await fetch('/api/chat/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from, text }),
-      });
-      if (!res.ok) {
-        showToast('Falha ao enviar mensagem no chat');
-        return;
-      }
-      chatTextInput.value = '';
-      await refreshAgentChat();
-    } catch (_) {
-      showToast('Falha ao enviar mensagem no chat');
+
+  agentCfgTabs.forEach((btn) => btn.addEventListener('click', () => setChatTab(btn.dataset.tab)));
+
+  sendCmdBtn?.addEventListener('click', async () => {
+    const to = (cmdToInput?.value || 'stark').trim();
+    const cmd = (cmdTextInput?.value || '').trim();
+    const riskLevel = Number(cmdRiskInput?.value || 0);
+    const success = (cmdSuccessInput?.value || '').trim() || 'Entrega registrada no Live + evidências anexadas.';
+
+    if (!cmd) {
+      showToast('Escreva o comando.');
+      return;
     }
+
+    const res = await apiPost('/api/agents/command', { to, cmd, riskLevel, successCriteria: success });
+    if (!res.ok) {
+      showToast((res.data && res.data.message) ? res.data.message : 'Falha ao criar missão de comando');
+      return;
+    }
+
+    renderCmdFeed([
+      `Missão criada: ${res.data?.missionId || 'ok'}`,
+      `Para: ${to} | Risco: ${riskLevel}`,
+    ]);
+
+    cmdTextInput.value = '';
+    if (cmdSuccessInput) cmdSuccessInput.value = '';
+
+    // Refresh board so it appears immediately
+    const dashboard = await loadDashboard();
+    ingestDashboardTransitions(dashboard);
+    renderBoard(dashboard.columns || fallbackData.columns);
+  });
+
+  agentCfgId?.addEventListener('change', () => {
+    const id = (agentCfgId.value || 'stark').trim();
+    const cfg = loadAgentCfg(id);
+    if (agentCfgEnabled) agentCfgEnabled.checked = cfg.enabled;
+    if (agentCfgNotes) agentCfgNotes.value = cfg.notes;
+  });
+
+  saveAgentCfgBtn?.addEventListener('click', async () => {
+    const id = (agentCfgId?.value || 'stark').trim();
+    const cfg = {
+      enabled: Boolean(agentCfgEnabled?.checked),
+      notes: String(agentCfgNotes?.value || ''),
+      updatedAt: Date.now(),
+    };
+    saveAgentCfg(id, cfg);
+    showToast('Salvo (local).');
   });
   closeBroadcastBtn?.addEventListener('click', () => broadcastDrawer.classList.remove('open'));
 

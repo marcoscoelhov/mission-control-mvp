@@ -117,19 +117,83 @@
 
     <aside class="chat-drawer glass" id="chat-drawer" aria-hidden="true">
       <div class="panel-head">
-        <h2>Chat entre agentes</h2>
+        <h2>Comandos</h2>
         <button class="header-icon-btn" id="close-chat" aria-label="Fechar">✕</button>
       </div>
 
-      <div class="agent-details" id="chat-feed">
-        <p class="muted">Sem mensagens ainda.</p>
+      <div class="settings-tabs" style="margin-top:6px">
+        <button class="chip active" data-tab="commands">Comando</button>
+        <button class="chip" data-tab="agentcfg">Agentes</button>
       </div>
 
-      <div class="settings-section active">
-        <label class="field"><span>De (agente)</span><input type="text" id="chat-from" value="Stark" /></label>
-        <label class="field"><span>Mensagem</span><input type="text" id="chat-text" placeholder="Ex.: Jarvis, revise missão #123" /></label>
-        <button class="chip active" id="send-chat">Enviar no chat</button>
-      </div>
+      <section class="settings-section active" id="tab-commands">
+        <p class="muted">Isso cria uma missão delegada (fonte de verdade: board).</p>
+
+        <label class="field">
+          <span>Para (agente)</span>
+          <select id="cmd-to">
+            <option value="stark" selected>Stark</option>
+            <option value="jarvis">Jarvis</option>
+            <option value="thanos">Thanos</option>
+            <option value="wanda">Wanda</option>
+            <option value="alfred">Alfred</option>
+            <option value="oraculo">Oráculo</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Comando (o que fazer)</span>
+          <textarea id="cmd-text" rows="4" placeholder="Ex.: Revisar missão #task_12 e sugerir correções.\nOU: Implementar X no arquivo Y."></textarea>
+        </label>
+
+        <div class="meta-grid">
+          <label class="field">
+            <span>Risco</span>
+            <select id="cmd-risk">
+              <option value="0" selected>0 — interno/seguro</option>
+              <option value="1">1 — exige Jarvis</option>
+              <option value="2">2 — externo (OK Marcos)</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Critério de sucesso</span>
+            <input id="cmd-success" type="text" placeholder="Ex.: resposta no Live + proof anexada" />
+          </label>
+        </div>
+
+        <button class="chip active" id="send-cmd">Criar missão delegada</button>
+        <div class="agent-details" id="cmd-feed" style="margin-top:10px">
+          <p class="muted">Dica: use isso ao invés de “chat”. Vira card rastreável.</p>
+        </div>
+      </section>
+
+      <section class="settings-section" id="tab-agentcfg">
+        <p class="muted">Configurações internas do dashboard (não mexe no OpenClaw ainda).</p>
+
+        <label class="field">
+          <span>Agente</span>
+          <select id="agentcfg-id">
+            <option value="stark" selected>Stark</option>
+            <option value="jarvis">Jarvis</option>
+            <option value="thanos">Thanos</option>
+            <option value="wanda">Wanda</option>
+            <option value="alfred">Alfred</option>
+            <option value="oraculo">Oráculo</option>
+          </select>
+        </label>
+
+        <label class="toggle-row">
+          <span>Ativo no dashboard</span>
+          <input type="checkbox" id="agentcfg-enabled" checked />
+        </label>
+
+        <label class="field">
+          <span>Notas (do Marcos)</span>
+          <textarea id="agentcfg-notes" rows="4" placeholder="Preferências, limites, instruções específicas..."></textarea>
+        </label>
+
+        <button class="chip active" id="save-agentcfg">Salvar</button>
+      </section>
     </aside>
 
     <aside class="broadcast-drawer glass" id="broadcast-drawer" aria-hidden="true">
@@ -248,6 +312,6 @@
       </section>
     </aside>
 
-    <script src="./script.js?v=51"></script>
+    <script src="./script.js?v=52"></script>
   </body>
 </html>
