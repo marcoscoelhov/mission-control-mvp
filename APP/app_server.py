@@ -1135,17 +1135,28 @@ class Handler(SimpleHTTPRequestHandler):
 
             # mark running and return immediately (async execution)
             ex = normalize_execution(mission)
+            was_running = str(ex.get('status') or '').lower() == 'running'
+
             ex['startedAt'] = now_ms()
             ex['updatedAt'] = now_ms()
             ex['endedAt'] = None
             ex['status'] = 'running'
+
+            # Clear any stale user-action text when re-queuing.
+            mission['needsUserAction'] = ''
             mission['execution'] = ex
             mission['executionStatus'] = ex['status']
             mission['effective'] = False
             mission['needsEffectiveness'] = True
+
             if col is not None and idx is not None:
                 col['items'][idx] = mission
-            append_trail_entry(mission_id, mission.get('title', 'Missão sem título'), 'Execução (LLM) enfileirada (async).')
+
+            append_trail_entry(
+                mission_id,
+                mission.get('title', 'Missão sem título'),
+                ('Execução (LLM) re-enfileirada (override de running anterior).' if was_running else 'Execução (LLM) enfileirada (async).')
+            )
             save_data(data)
 
             owner = mission.get('owner', 'Stark')
