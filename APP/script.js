@@ -125,16 +125,18 @@ function applyMobileFilter(columns) {
   const filter = showFailedOnly ? 'failed' : boardFilter;
   const wanted =
     filter === 'active'
-      ? ['in_progress', 'assigned', 'review']
+      ? ['in_progress', 'assigned', 'review', 'needs_monarca_decision']
       : filter === 'assigned'
         ? ['assigned']
         : filter === 'review'
           ? ['review']
           : filter === 'done'
             ? ['done']
-            : filter === 'failed' || filter === 'waiting'
+            : filter === 'failed'
               ? ['failed']
-              : ['in_progress', 'assigned', 'review', 'done'];
+              : filter === 'waiting'
+                ? ['needs_monarca_decision', 'failed']
+                : ['in_progress', 'assigned', 'review', 'needs_monarca_decision', 'done'];
 
   const out = wanted.map((k) => byKey.get(k)).filter(Boolean);
   return out.length ? out : (columns || []).filter((c) => normalizeColumnKey(c.name || '') !== 'inbox');
@@ -1218,7 +1220,7 @@ function renderMobileFlow(columns) {
   // Mobile needs a flow-first view (like desktop), not hidden side panels.
   const ORDER = showFailedOnly
     ? ['failed']
-    : ['inbox', 'assigned', 'in_progress', 'review', 'done', 'failed'];
+    : ['inbox', 'assigned', 'in_progress', 'review', 'needs_monarca_decision', 'done', 'failed'];
 
   const byKey = new Map((columns || []).map((c) => [normalizeColumnKey(c.name), c]));
 
