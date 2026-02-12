@@ -1118,7 +1118,12 @@ class Handler(SimpleHTTPRequestHandler):
 
                 base_ok = bool(result.get('ok'))
                 final_ok = base_ok and c_ok
-                ex2['status'] = 'effective' if final_ok else 'failed'
+
+                # If criterion C fails, this is a Monarca decision (missing asset/permission), not a generic failure.
+                if final_ok:
+                    ex2['status'] = 'effective'
+                else:
+                    ex2['status'] = 'needs_monarca_decision' if base_ok and (not c_ok) else 'failed'
 
                 evidence = list(dict.fromkeys((ex2.get('evidence') or []) + (result.get('evidence') or []) + git_evidence))
                 ex2['evidence'] = evidence
@@ -1131,10 +1136,29 @@ class Handler(SimpleHTTPRequestHandler):
                 if mission2['effective']:
                     mission2['needsUserAction'] = ''
                 else:
-                    mission2['needsUserAction'] = 'Critério C não atendido: precisa alterar arquivos e gerar diff (git).'
+                    if ex2['status'] == 'needs_monarca_decision':
+                        mission2['needsUserAction'] = (
+                            'Decisão do Monarca: forneça o asset (SVG/PNG/link) ou autorize placeholder + confirme "patch local ok".'
+                        )
+                    else:
+                        mission2['needsUserAction'] = 'Falha de execução. Ver evidências e reexecutar.'
 
-                if col2 is not None and idx2 is not None:
-                    col2['items'][idx2] = mission2
+                # Move mission to the proper column when it needs a Monarca decision.
+                if ex2['status'] == 'needs_monarca_decision':
+                    # Remove from current column
+                    if col2 is not None and idx2 is not None:
+                        try:
+                            col2['items'].pop(idx2)
+                        except Exception:
+                            pass
+                    target = get_column(data2, 'Needs Monarca Decision', 'Needs Monarca Decision')
+                    if target is not None:
+                        target['items'] = [mission2] + (target.get('items', []) or [])
+                        record_transition(data2, mission_id, 'in_progress', 'needs_monarca_decision', actor='alfred', reason='criterion_c_missing', title=mission2.get('title','Missão'))
+                        append_trail_entry(mission_id, mission2.get('title', 'Missão'), 'Movida para Needs Monarca Decision (Critério C não atendido).')
+                else:
+                    if col2 is not None and idx2 is not None:
+                        col2['items'][idx2] = mission2
 
                 append_trail_entry(mission_id, mission2.get('title', 'Missão sem título'), f"Execução (LLM) finalizada: {ex2['status']} | evidências: {len(evidence)}")
                 save_data(data2)
