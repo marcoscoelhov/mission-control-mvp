@@ -46,6 +46,7 @@ const agentCfgNotes = document.getElementById('agentcfg-notes');
 const saveAgentCfgBtn = document.getElementById('save-agentcfg');
 const missionTitleInput = document.getElementById('mission-title');
 const missionDescInput = document.getElementById('mission-desc');
+const missionProjectInput = document.getElementById('mission-project');
 const missionTypeInput = document.getElementById('mission-type');
 const missionRiskInput = document.getElementById('mission-risk');
 const missionSuccessInput = document.getElementById('mission-success');
@@ -1867,6 +1868,7 @@ function setupUI() {
   sendBroadcastBtn?.addEventListener('click', async () => {
     const requestedTitle = missionTitleInput.value.trim();
     const desc = missionDescInput.value.trim();
+    const missionProject = (missionProjectInput?.value || 'auto').trim() || 'auto';
     const missionType = (missionTypeInput?.value || 'Feature').trim() || 'Feature';
     const riskLevel = Number(missionRiskInput?.value || 0);
     const successCriteria = (missionSuccessInput?.value || '').trim();
@@ -1889,7 +1891,7 @@ function setupUI() {
         : { impactRevenue: 3, impactAutonomy: 3, urgency: 3 };
 
     const missionId = makeMissionId();
-    const contractBlock = `\n\n---\n[CONTRATO]\nTIPO: ${missionType}\nRISCO: ${riskLevel}\nCRITERIOS_DE_SUCESSO:\n${successCriteria}\n${proofExpected ? `\nPROOF_ESPERADO: ${proofExpected}` : ''}\n---\n`;
+    const contractBlock = `\n\n---\n[CONTRATO]\nPROJETO: ${missionProject}\nTIPO: ${missionType}\nRISCO: ${riskLevel}\nCRITERIOS_DE_SUCESSO:\n${successCriteria}\n${proofExpected ? `\nPROOF_ESPERADO: ${proofExpected}` : ''}\n---\n`;
 
     const card = {
       id: missionId,
@@ -1903,6 +1905,7 @@ function setupUI() {
       eta: missionEtaInput.value.trim() || 'agora',
       ...weights,
 
+      missionProject,
       missionType,
       riskLevel,
       successCriteria,
@@ -1943,6 +1946,7 @@ function setupUI() {
     if (missionProofInput) missionProofInput.value = '';
     if (missionTypeInput) missionTypeInput.value = 'Feature';
     if (missionRiskInput) missionRiskInput.value = '0';
+    if (missionProjectInput) missionProjectInput.value = 'auto';
     try {
       const adv = document.getElementById('broadcast-advanced');
       if (adv) adv.open = false;

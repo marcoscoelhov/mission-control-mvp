@@ -100,6 +100,10 @@ def _read_text_snippet(path: Path, start: str = '', end: str = '', max_chars: in
 
 def infer_context_area(text: str):
     t = (text or '').lower()
+    if any(k in t for k in ['yt-automator', 'yt automator', 'youtube', 'yt_automator']):
+        return 'yt_automator'
+    if any(k in t for k in ['escala']):
+        return 'escala'
     if any(k in t for k in ['header', 'topbar', 'brand', 'mission control', 'titulo', 'título', 'métrica', 'metric', 'númer', 'numero', 'contagem', 'count']):
         return 'topbar'
     if any(k in t for k in ['kanban', 'board', 'coluna', 'inbox', 'assigned', 'review', 'done', 'fluxo']):
@@ -113,6 +117,29 @@ def infer_context_area(text: str):
     if any(k in t for k in ['api', 'backend', 'server', 'endpoint', 'app_server.py']):
         return 'backend'
     return 'general'
+
+
+def _tree(root: Path, max_entries: int = 80):
+    out = []
+    try:
+        root = Path(root)
+        if not root.exists():
+            return []
+        for p in sorted(root.rglob('*')):
+            if len(out) >= max_entries:
+                break
+            # keep it small
+            if p.is_dir():
+                continue
+            rel = str(p.relative_to(root))
+            if rel.startswith('.git/'):
+                continue
+            if any(rel.endswith(x) for x in ['.png', '.jpg', '.jpeg', '.mp4', '.mov', '.zip']):
+                continue
+            out.append(rel)
+    except Exception:
+        return out
+    return out
 
 
 def build_context_pack(area: str, data: dict, mission: dict):
@@ -153,6 +180,28 @@ def build_context_pack(area: str, data: dict, mission: dict):
     elif area == 'broadcast':
         parts.append('index.html(broadcast drawer):\n' + _read_text_snippet(BASE / 'index.html', '<aside class="broadcast-drawer', '</aside>', 1200))
 
+    elif area in ('yt_automator', 'escala'):
+        # Best-effort: include a small file tree + README/package if present.
+        proj = 'yt-automator' if area == 'yt_automator' else 'escala'
+        # Candidate roots (legacy paths may vary)
+        candidates = [
+            Path('/root/.openclaw/workspace/app') / proj,
+            Path('/root/.openclaw/workspace/apps') / proj,
+            Path('/root/.openclaw/workspace/projects') / proj,
+            Path('/root/.openclaw/workspace') / proj,
+        ]
+        root = next((c for c in candidates if c.exists()), None)
+        parts.append(f'project={proj}')
+        if root:
+            parts.append(f'project_root={root}')
+            parts.append('project_tree:\n' + '\n'.join(_tree(root, 90)))
+            for fname in ['README.md', 'readme.md', 'package.json', 'pyproject.toml', 'requirements.txt']:
+                p = root / fname
+                if p.exists():
+                    parts.append(f'{fname}:\n' + _read_text_snippet(p, max_chars=1200))
+        else:
+            parts.append('project_root=NOT_FOUND')
+
     # Keep pack bounded
     pack = '\n\n'.join([p for p in parts if p and p.strip()])
     if len(pack) > 3600:
@@ -172,7 +221,20 @@ def mission_openclaw_text(mission):
         data = load_data()
     except Exception:
         data = {}
-    area = infer_context_area(f"{title} {desc}")
+    # If user specified a project tag, prefer it.
+    proj = str(mission.get('missionProject') or '').strip().lower()
+    if proj and proj != 'auto':
+        if proj in ('mission-control', 'mission_control'):
+            area = infer_context_area(f"{title} {desc}")
+        elif proj in ('yt-automator', 'yt_automator', 'ytautomator'):
+            area = 'yt_automator'
+        elif proj in ('escala',):
+            area = 'escala'
+        else:
+            area = infer_context_area(f"{proj} {title} {desc}")
+    else:
+        area = infer_context_area(f"{title} {desc}")
+
     ctx = build_context_pack(area, data, mission)
 
     return (
@@ -1186,6 +1248,7 @@ class Handler(SimpleHTTPRequestHandler):
                 'desc': desc,
 
                 # Mission contract fields (Mission Control constitution)
+                'missionProject': str(payload.get('missionProject') or '').strip() or 'auto',
                 'missionType': str(payload.get('missionType') or '').strip() or 'Feature',
                 'riskLevel': int(payload.get('riskLevel') or 0),
                 'successCriteria': str(payload.get('successCriteria') or '').strip(),
