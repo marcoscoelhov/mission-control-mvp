@@ -30,6 +30,14 @@ Calcular (mentalmente) idade desde o `lastRunAtMs`.
    - id: `4f76d5ea-66d3-4ed1-bcc2-41b1049ef77c`
    - Se stale (>26 h): `openclaw cron run 4f76d5ea-66d3-4ed1-bcc2-41b1049ef77c --force`
 
+4) **Octopus Daily Intel (08:05 BRT)**
+   - id: `505b6b23-1c14-4fcf-9447-9ba3c04243c8`
+   - Se stale (>26 h): `openclaw cron run 505b6b23-1c14-4fcf-9447-9ba3c04243c8 --force`
+
+5) **Loki Drafts from Intel (08:20 BRT)**
+   - id: `e901bd61-8aa1-4256-bcfd-cc6afbc8228d`
+   - Se stale (>26 h): `openclaw cron run e901bd61-8aa1-4256-bcfd-cc6afbc8228d --force`
+
 ## 2) Detecção de degradação (sem loop infinito)
 Para qualquer job:
 - Se `lastStatus=error` **ou** `consecutiveErrors >= 2`:
