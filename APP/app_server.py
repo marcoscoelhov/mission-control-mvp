@@ -301,8 +301,11 @@ def run_openclaw_agent_sync(agent_id, session_id, message_text, timeout_seconds=
 
     Uses a dedicated session id to avoid huge contexts.
     Uses Popen+communicate so we can hard-kill on timeout."""
+    # Use local embedded mode to avoid gateway token mismatch issues during
+    # dashboard autonomous execution.
     cmd = [
         'openclaw', 'agent',
+        '--local',
         '--agent', str(agent_id),
         '--session-id', str(session_id),
         '--message', str(message_text),
@@ -363,6 +366,70 @@ def run_openclaw_agent_sync(agent_id, session_id, message_text, timeout_seconds=
         evidence.append(('stdout: ' + stdout.replace('\n', ' ')[:900]).strip())
     if stderr and not ok:
         evidence.append(('stderr: ' + stderr.replace('\n', ' ')[:400]).strip())
+
+    # Fallback: if the assigned agent has an unavailable model, retry with Stark.
+    # This keeps autonomous execution alive instead of hard-failing the mission.
+    if (not ok) and ('Unknown model:' in (stderr or '')) and str(agent_id).strip().lower() != 'stark':
+        retry_cmd = [
+            'openclaw', 'agent',
+            '--local',
+            '--agent', 'stark',
+            '--session-id', str(session_id),
+            '--message', str(message_text),
+            '--thinking', 'low',
+            '--timeout', str(int(timeout_seconds)),
+            '--json'
+        ]
+        p2 = subprocess.Popen(retry_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            stdout2, stderr2 = p2.communicate(timeout=int(timeout_seconds) + 25)
+        except subprocess.TimeoutExpired:
+            try:
+                p2.kill()
+            except Exception:
+                pass
+            stdout2, stderr2 = '', 'timeout_on_retry_stark'
+
+        rc2 = p2.returncode if p2.returncode is not None else 1
+        stdout2 = (stdout2 or '').strip()
+        stderr2 = (stderr2 or '').strip()
+
+        parsed2 = None
+        reply2 = ''
+        if stdout2:
+            try:
+                parsed2 = json.loads(stdout2)
+            except Exception:
+                parsed2 = None
+        if isinstance(parsed2, dict):
+            for k in ['reply', 'text', 'message', 'output', 'content']:
+                if isinstance(parsed2.get(k), str) and parsed2.get(k).strip():
+                    reply2 = parsed2.get(k).strip()
+                    break
+            if not reply2:
+                for k in ['result', 'data']:
+                    v = parsed2.get(k)
+                    if isinstance(v, dict):
+                        for kk in ['reply', 'text', 'message', 'output', 'content']:
+                            if isinstance(v.get(kk), str) and v.get(kk).strip():
+                                reply2 = v.get(kk).strip()
+                                break
+        else:
+            reply2 = stdout2
+
+        if rc2 == 0:
+            ok = True
+            rc = rc2
+            reply_text = reply2
+            stderr = stderr2
+            evidence.append('retry_with_stark: success')
+            if reply2:
+                evidence.append(('LLM(stark): ' + reply2.replace('\n', ' ')[:900]).strip())
+        else:
+            evidence.append('retry_with_stark: failed')
+            if stderr2:
+                evidence.append(('stderr_retry: ' + stderr2.replace('\n', ' ')[:400]).strip())
+
     if ok and not evidence:
         evidence.append('runner_ok_no_output')
 
@@ -386,7 +453,7 @@ def dispatch_mission_to_openclaw(mission):
 
     try:
         subprocess.Popen(
-            ['openclaw', 'agent', '--agent', agent_id, '--session-id', str(mission_id), '--message', text, '--timeout', '120'],
+            ['openclaw', 'agent', '--local', '--agent', agent_id, '--session-id', str(mission_id), '--message', text, '--timeout', '120'],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
