@@ -154,6 +154,14 @@ body {
 .chip.warning {
   color: #ffebad;
   border-color: rgba(255, 217, 128, 0.38);
+  background: rgba(255, 217, 128, 0.06);
+}
+
+/* Mini chips can also be warning/danger (for risk & gates). */
+.chip.mini.warning {
+  color: #ffebad;
+  border-color: rgba(255, 217, 128, 0.38);
+  background: rgba(255, 217, 128, 0.06);
 }
 
 .chip.warning #failed-count {

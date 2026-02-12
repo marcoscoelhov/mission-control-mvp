@@ -926,7 +926,14 @@ function createCard(item, columnKey = '') {
   const score = priorityScore(c);
   const risk = Number(c.riskLevel ?? 0);
   const typeBadge = c.missionType ? `<span class="chip mini">${escapeHtml(c.missionType)}</span>` : '';
-  const riskBadge = `<span class="chip mini">R${risk}</span>`;
+  const riskBadge = `<span class="chip mini ${risk >= 2 ? 'danger' : risk >= 1 ? 'warning' : ''}">R${risk}</span>`;
+
+  const gatePending = (() => {
+    if (risk >= 2 && !c.monarcaOk) return 'OK do Monarca pendente';
+    if (risk >= 1 && !c.approved) return 'Aprovação do Jarvis pendente';
+    return '';
+  })();
+  const gateBadge = gatePending ? `<span class="chip mini warning">⛔ ${escapeHtml(gatePending)}</span>` : '';
 
   const approveBtn = c.approved
     ? `<span class="chip mini approved">Aprovado</span>`
@@ -963,7 +970,7 @@ function createCard(item, columnKey = '') {
       <span>${escapeHtml(c.owner)}</span>
       <span>${escapeHtml(c.eta)} ago</span>
     </div>
-    <div class="approve-row">${stageBadge} ${typeBadge} ${riskBadge} ${approveBtn} ${monarcaBtn} ${effectiveness} ${executionBadge} ${oracleBadge}</div>
+    <div class="approve-row">${stageBadge} ${typeBadge} ${riskBadge} ${gateBadge} ${approveBtn} ${monarcaBtn} ${effectiveness} ${executionBadge} ${oracleBadge}</div>
     ${c.needsUserAction ? `<div class="empty-column" style="margin-top:8px">Ação necessária: ${escapeHtml(c.needsUserAction)}</div>` : ''}
     <div class="card-actions">${clarifyBtn} ${runBtn} ${deleteBtn}</div>
   `;
