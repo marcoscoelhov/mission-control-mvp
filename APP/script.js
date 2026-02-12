@@ -22,6 +22,14 @@ const inboxChip = document.getElementById('inbox-chip');
 const failedBell = document.getElementById('failed-bell');
 const failedCountEl = document.getElementById('failed-count');
 const openBroadcastBtn = document.getElementById('open-broadcast');
+const openIngestBtn = document.getElementById('open-ingest');
+const ingestDrawer = document.getElementById('ingest-drawer');
+const closeIngestBtn = document.getElementById('close-ingest');
+const sendIngestBtn = document.getElementById('send-ingest');
+const refUrlInput = document.getElementById('ref-url');
+const refTextInput = document.getElementById('ref-text');
+const refGoalInput = document.getElementById('ref-goal');
+
 const broadcastDrawer = document.getElementById('broadcast-drawer');
 const closeBroadcastBtn = document.getElementById('close-broadcast');
 const sendBroadcastBtn = document.getElementById('send-broadcast');
@@ -1829,13 +1837,99 @@ function setupUI() {
 
   openBroadcastBtn?.addEventListener('click', () => {
     broadcastDrawer.classList.add('open');
+    ingestDrawer?.classList.remove('open');
     settingsDrawer.classList.remove('open');
     chatDrawer?.classList.remove('open');
+  });
+
+  openIngestBtn?.addEventListener('click', () => {
+    ingestDrawer?.classList.add('open');
+    broadcastDrawer?.classList.remove('open');
+    settingsDrawer.classList.remove('open');
+    chatDrawer?.classList.remove('open');
+  });
+
+  closeIngestBtn?.addEventListener('click', () => ingestDrawer?.classList.remove('open'));
+
+  sendIngestBtn?.addEventListener('click', async () => {
+    const url = String(refUrlInput?.value || '').trim();
+    const text = String(refTextInput?.value || '').trim();
+    const goal = String(refGoalInput?.value || '').trim();
+
+    if (!url && !text) {
+      showToast('Cole uma URL ou algum texto.');
+      return;
+    }
+
+    const title = url ? `Ref: ${(() => { try { return new URL(url).host; } catch (_) { return 'link'; } })()}` : 'Ref: conteúdo colado';
+    const desc = [
+      '[REFERÊNCIA]',
+      url ? `URL: ${url}` : null,
+      text ? `\n[TEXTO]\n${text}` : null,
+      goal ? `\n[OBJETIVO MONETÁRIO]\n${goal}` : null,
+      '\n[PIPELINE OBRIGATÓRIO]',
+      '1) Resuma em 5-10 bullets (o que importa para o Reino).',
+      '2) Extraia ações executáveis (tarefas pequenas) com dono sugerido (Thanos/Wanda/Alfred).',
+      '3) Gere backlog priorizado por AUTONOMIA + RECEITA (com critérios de sucesso).',
+    ].filter(Boolean).join('\n');
+
+    const success = [
+      'Resumo entregue + link/trechos citados.',
+      'Lista de ações com owner + critérios de sucesso.',
+      'Backlog priorizado por autonomia+receita em formato Kanban.',
+    ].join('\n- ');
+
+    const payload = {
+      missionId: makeMissionId(),
+      title,
+      requestedTitle: title,
+      desc,
+      owner: 'Stark',
+      eta: 'agora',
+      impactRevenue: 4,
+      impactAutonomy: 4,
+      urgency: 3,
+      approved: false,
+      kind: 'reference_ingest',
+      targetFile: '',
+      expectedChange: '',
+      acceptanceTest: `- ${success}`,
+    };
+
+    sendIngestBtn.disabled = true;
+    try {
+      const created = await persistBroadcastMission(payload);
+      if (STRICT_PERSISTENCE && !created.ok) {
+        showToast('Falha ao persistir ingestão no backend');
+        return;
+      }
+
+      payload.id = created.missionId || payload.missionId;
+      payload.cardId = payload.id;
+      payload.title = created.missionTitle || payload.title;
+
+      addMissionToInbox(payload);
+      const boardOk = await persistBoardState('broadcast_inbox', { title: payload.title, missionId: payload.id || payload.cardId });
+      if (STRICT_PERSISTENCE && !boardOk) {
+        showToast('Falha ao persistir estado do board no backend');
+        return;
+      }
+
+      addLiveEvent('Referência ingerida', `${payload.title} enviada para Inbox.`, true, { missionKey: payload.cardId || payload.title, missionTitle: payload.title });
+
+      if (refUrlInput) refUrlInput.value = '';
+      if (refTextInput) refTextInput.value = '';
+      if (refGoalInput) refGoalInput.value = '';
+      ingestDrawer?.classList.remove('open');
+    } finally {
+      sendIngestBtn.disabled = false;
+    }
   });
 
   openChatBtn?.addEventListener('click', async () => {
     chatDrawer?.classList.add('open');
     broadcastDrawer?.classList.remove('open');
+    ingestDrawer?.classList.remove('open');
     settingsDrawer?.classList.remove('open');
     setChatTab('commands');
     renderCmdFeed(['Pronto. Crie uma missão delegada aqui.']);
@@ -1992,6 +2086,7 @@ function setupUI() {
   openSettingsBtn.addEventListener('click', () => {
     settingsDrawer.classList.add('open');
     broadcastDrawer.classList.remove('open');
+    ingestDrawer?.classList.remove('open');
     chatDrawer?.classList.remove('open');
   });
   closeSettingsBtn.addEventListener('click', () => settingsDrawer.classList.remove('open'));

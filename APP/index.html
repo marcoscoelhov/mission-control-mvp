@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=25" />
+    <link rel="stylesheet" href="./styles.css?v=26" />
   </head>
   <body>
     <div class="bg-orb orb-1"></div>
@@ -42,6 +42,7 @@
           <button class="tab active">Active</button>
           <button class="tab" id="open-chat">Chat</button>
           <button class="tab" id="open-broadcast">Broadcast</button>
+          <button class="tab" id="open-ingest">Ingest</button>
           <button class="tab">Docs</button>
           <button class="header-icon-btn" id="open-settings" aria-label="Abrir configurações" title="Missão, modo autônomo e configurações">⚙</button>
           <button class="header-icon-btn" id="toggle-live" aria-label="Abrir Live" title="Mostrar/ocultar painel Live">
@@ -196,6 +197,33 @@
       </section>
     </aside>
 
+    <aside class="ingest-drawer glass" id="ingest-drawer" aria-hidden="true">
+      <div class="panel-head">
+        <h2>Ingestão de Referência</h2>
+        <button class="header-icon-btn" id="close-ingest" aria-label="Fechar">✕</button>
+      </div>
+
+      <div class="settings-section active">
+        <label class="field">
+          <span>URL (opcional)</span>
+          <input type="url" id="ref-url" placeholder="Cole a URL (post, vídeo, thread, landing...)" />
+        </label>
+
+        <label class="field">
+          <span>Texto/Conteúdo (opcional)</span>
+          <textarea id="ref-text" rows="6" placeholder="Cole o post/roteiro/nota. Se colar URL, pode deixar vazio."></textarea>
+        </label>
+
+        <label class="field">
+          <span>Objetivo monetário (opcional)</span>
+          <input type="text" id="ref-goal" placeholder="Ex.: aumentar conversão, ideias de ofertas, retenção..." />
+        </label>
+
+        <p class="muted">Pipeline: referência → resumo → ações → backlog priorizado (autonomia + receita).</p>
+        <button class="chip active" id="send-ingest">Ingerir e enviar para Inbox</button>
+      </div>
+    </aside>
+
     <aside class="broadcast-drawer glass" id="broadcast-drawer" aria-hidden="true">
       <div class="panel-head">
         <h2>Broadcast de Missão</h2>
@@ -330,6 +358,6 @@
       </section>
     </aside>
 
-    <script src="./script.js?v=55"></script>
+    <script src="./script.js?v=56"></script>
   </body>
 </html>

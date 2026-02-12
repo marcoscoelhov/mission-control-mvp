@@ -533,7 +533,8 @@ body {
 
 .settings-drawer,
 .broadcast-drawer,
-.chat-drawer {
+.chat-drawer,
+.ingest-drawer {
   position: fixed;
   right: 16px;
   top: 16px;
@@ -558,7 +559,8 @@ body {
 
 .settings-drawer.open,
 .broadcast-drawer.open,
-.chat-drawer.open {
+.chat-drawer.open,
+.ingest-drawer.open {
   transform: translateX(0);
   opacity: 1;
   pointer-events: auto;
@@ -1066,7 +1068,8 @@ body.autonomous-on #auto-delegate {
 
   .settings-drawer,
   .broadcast-drawer,
-  .chat-drawer {
+  .chat-drawer,
+  .ingest-drawer {
     right: 0;
     top: auto;
     bottom: 0;
@@ -1078,7 +1081,8 @@ body.autonomous-on #auto-delegate {
 
   .settings-drawer.open,
   .broadcast-drawer.open,
-  .chat-drawer.open {
+  .chat-drawer.open,
+  .ingest-drawer.open {
     transform: translateY(0);
   }
 }
