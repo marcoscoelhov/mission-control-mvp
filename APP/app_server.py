@@ -960,6 +960,14 @@ class Handler(SimpleHTTPRequestHandler):
                 'title': title,
                 'requestedTitle': requested_title,
                 'desc': desc,
+
+                # Mission contract fields (Mission Control constitution)
+                'missionType': str(payload.get('missionType') or '').strip() or 'Feature',
+                'riskLevel': int(payload.get('riskLevel') or 0),
+                'successCriteria': str(payload.get('successCriteria') or '').strip(),
+                'proofExpected': str(payload.get('proofExpected') or '').strip(),
+                'monarcaOk': bool(payload.get('monarcaOk') or False),
+
                 'kind': triage.get('kind') or infer_mission_kind(title, desc),
                 'owner': triage.get('owner') or payload.get('owner', infer_owner_simple(title, desc)),
                 'confidence': 1.0,
@@ -1253,17 +1261,58 @@ class Handler(SimpleHTTPRequestHandler):
             actor = str(payload.get('actor') or 'ui')
             transition_id = str(payload.get('transitionId') or '').strip() or None
 
+            # Fetch canonical mission for validations / state mutations
+            col_ref, idx_ref, mission_ref = find_mission_ref(data, mission_id) if mission_id else (None, None, None)
+
             if action == 'move':
                 from_c = payload.get('fromColumn', '?')
                 to_c = payload.get('toColumn', '?')
+
+                # Guard rails: DONE requires proof + approvals depending on risk.
+                if str(to_c).strip().lower() == 'done' and mission_ref is not None:
+                    risk = int(mission_ref.get('riskLevel') or 0)
+                    if not has_execution_proof(mission_ref):
+                        return self._json(409, {
+                            'ok': False,
+                            'error': 'done_requires_proof',
+                            'message': 'DONE bloqueado: falta PROOF (execution.status=effective + evidence[]). Execute e gere evidências reais antes de concluir.',
+                        })
+                    if risk >= 1 and not bool(mission_ref.get('approved')):
+                        return self._json(409, {
+                            'ok': False,
+                            'error': 'done_requires_jarvis',
+                            'message': 'DONE bloqueado: missão Risco 1 exige aprovação do Jarvis antes de concluir.',
+                        })
+                    if risk >= 2 and not bool(mission_ref.get('monarcaOk')):
+                        return self._json(409, {
+                            'ok': False,
+                            'error': 'done_requires_monarca',
+                            'message': 'DONE bloqueado: missão Risco 2 exige OK explícito do Monarca antes de concluir.',
+                        })
+
                 record_transition(data, mission_id or 'unknown', from_c, to_c, actor=actor, reason='manual_move', title=title, transition_id=transition_id)
                 append_trail_entry(mission_id or 'unknown', title, f"Movida de {from_c} para {to_c}.")
+
             elif action in ('approve', 'autonomous_approve'):
+                # Persist Jarvis approval into the canonical mission.
+                if mission_ref is not None and col_ref is not None and idx_ref is not None:
+                    mission_ref['approved'] = True
+                    col_ref['items'][idx_ref] = mission_ref
+
                 record_transition(data, mission_id or 'unknown', payload.get('fromColumn', '?'), payload.get('toColumn', payload.get('fromColumn', '?')), actor='jarvis', reason='approved', title=title, transition_id=transition_id)
                 append_trail_entry(mission_id or 'unknown', title, 'Aprovada por Jarvis.')
+
+            elif action == 'monarca_ok':
+                if mission_ref is not None and col_ref is not None and idx_ref is not None:
+                    mission_ref['monarcaOk'] = True
+                    col_ref['items'][idx_ref] = mission_ref
+                record_transition(data, mission_id or 'unknown', payload.get('fromColumn', '?'), payload.get('toColumn', payload.get('fromColumn', '?')), actor='marcos', reason='monarca_ok', title=title, transition_id=transition_id)
+                append_trail_entry(mission_id or 'unknown', title, 'OK do Monarca registrado.')
+
             elif action == 'auto_delegate' and payload.get('title'):
                 record_transition(data, mission_id or 'unknown', 'inbox', 'assigned', actor='stark', reason='auto_delegate', title=title, transition_id=transition_id)
                 append_trail_entry(mission_id or 'unknown', title, 'Delegação automática executada por Stark.')
+
             elif action == 'autonomous_move':
                 from_col = payload.get('from', '?')
                 to_col = payload.get('to', '?')
@@ -1273,6 +1322,7 @@ class Handler(SimpleHTTPRequestHandler):
                 if str(to_col).lower() == 'in_progress':
                     # Execution is now tracked via /api/missions/run (LLM) to ensure proof + timeline.
                     append_trail_entry(mission_id or 'unknown', title, 'Entrou em In Progress — aguardando execução (LLM) rastreada.')
+
             elif action == 'clarification_reply':
                 from_c = payload.get('fromColumn', '?')
                 to_c = payload.get('toColumn', '?')
@@ -1281,6 +1331,7 @@ class Handler(SimpleHTTPRequestHandler):
                 clar = str(payload.get('clarification', '')).strip()
                 if clar:
                     append_trail_entry(mission_id or 'unknown', title, f"Contexto recebido: {clar[:600]}")
+
             elif action == 'delete_card':
                 from_c = payload.get('fromColumn', '?')
                 record_transition(data, mission_id or 'unknown', from_c, 'deleted', actor=actor, reason='delete_card', title=title, transition_id=transition_id)

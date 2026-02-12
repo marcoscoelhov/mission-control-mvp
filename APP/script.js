@@ -34,6 +34,10 @@ const chatTextInput = document.getElementById('chat-text');
 const sendChatBtn = document.getElementById('send-chat');
 const missionTitleInput = document.getElementById('mission-title');
 const missionDescInput = document.getElementById('mission-desc');
+const missionTypeInput = document.getElementById('mission-type');
+const missionRiskInput = document.getElementById('mission-risk');
+const missionSuccessInput = document.getElementById('mission-success');
+const missionProofInput = document.getElementById('mission-proof');
 const missionPriorityInput = document.getElementById('mission-priority');
 const missionEtaInput = document.getElementById('mission-eta');
 
@@ -473,6 +477,12 @@ function normalizeCard(item) {
     impactRevenue: Number(item.impactRevenue ?? 3),
     impactAutonomy: Number(item.impactAutonomy ?? 3),
     urgency: Number(item.urgency ?? 3),
+    missionType: item.missionType || 'Feature',
+    riskLevel: Number(item.riskLevel ?? 0),
+    successCriteria: item.successCriteria || '',
+    proofExpected: item.proofExpected || '',
+    monarcaOk: Boolean(item.monarcaOk),
+
     approved: Boolean(item.approved),
     effective: Boolean(item.effective),
     needsEffectiveness: Boolean(item.needsEffectiveness),
@@ -602,14 +612,17 @@ async function apiPost(url, payload) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    return res.ok;
+    let data = null;
+    try { data = await res.json(); } catch (_) {}
+    return { ok: res.ok, status: res.status, data };
   } catch (_) {
-    return false;
+    return { ok: false, status: 0, data: null };
   }
 }
 
 async function persistMove(payload) {
-  return apiPost(API.move, payload);
+  const res = await apiPost(API.move, payload);
+  return res.ok;
 }
 
 async function persistBroadcastMission(payload) {
@@ -633,10 +646,14 @@ function makeTransitionId(prefix = 'tr') {
 
 async function persistBoardState(action, extra = {}) {
   const payload = { action, board: boardState, actor: 'ui', ...extra };
-  if (!payload.transitionId && ['move', 'autonomous_move', 'clarification_reply', 'delete_card', 'approve', 'autonomous_approve', 'effectiveness_reopen', 'effectiveness_ok', 'auto_delegate'].includes(action)) {
+  if (!payload.transitionId && ['move', 'autonomous_move', 'clarification_reply', 'delete_card', 'approve', 'autonomous_approve', 'monarca_ok', 'effectiveness_reopen', 'effectiveness_ok', 'auto_delegate'].includes(action)) {
     payload.transitionId = makeTransitionId(action);
   }
-  return apiPost(API.boardState, payload);
+  const res = await apiPost(API.boardState, payload);
+  if (!res.ok && res?.data?.message) {
+    showToast(res.data.message);
+  }
+  return res.ok;
 }
 
 async function deleteCardReal(missionId, title = '') {
@@ -718,7 +735,7 @@ async function saveAutonomousMode(enabled) {
   setAutonomousVisuals(enabled);
   addLiveEvent('Modo autônomo', enabled ? 'Ativado' : 'Desativado', true);
   if (enabled) autonomousTick();
-  const ok = await apiPost(API.autonomous, { enabled, auto_exec_enabled: enabled });
+  const ok = (await apiPost(API.autonomous, { enabled, auto_exec_enabled: enabled })).ok;
   if (STRICT_PERSISTENCE && !ok) {
     showToast('Falha ao persistir modo autônomo no backend');
   }
@@ -883,6 +900,11 @@ function createCard(item, columnKey = '') {
   card.dataset.impactRevenue = String(c.impactRevenue);
   card.dataset.impactAutonomy = String(c.impactAutonomy);
   card.dataset.urgency = String(c.urgency);
+  card.dataset.missionType = String(c.missionType || 'Feature');
+  card.dataset.riskLevel = String(c.riskLevel ?? 0);
+  card.dataset.successCriteria = String(c.successCriteria || '');
+  card.dataset.proofExpected = String(c.proofExpected || '');
+  card.dataset.monarcaOk = c.monarcaOk ? '1' : '0';
   card.dataset.approved = c.approved ? '1' : '0';
   card.dataset.effective = c.effective ? '1' : '0';
   card.dataset.needsEffectiveness = c.needsEffectiveness ? '1' : '0';
@@ -902,12 +924,24 @@ function createCard(item, columnKey = '') {
   card.dataset.executionEvidence = JSON.stringify(Array.isArray(c.execution?.evidence) ? c.execution.evidence : (Array.isArray(c.effectEvidence) ? c.effectEvidence : []));
 
   const score = priorityScore(c);
+  const risk = Number(c.riskLevel ?? 0);
+  const typeBadge = c.missionType ? `<span class="chip mini">${escapeHtml(c.missionType)}</span>` : '';
+  const riskBadge = `<span class="chip mini">R${risk}</span>`;
+
   const approveBtn = c.approved
     ? `<span class="chip mini approved">Aprovado</span>`
     : `<button class="chip mini" data-action="approve">Aprovar (Jarvis)</button>`;
+
+  const monarcaBtn = risk >= 2
+    ? (c.monarcaOk
+      ? `<span class="chip mini approved">OK Monarca</span>`
+      : `<button class="chip mini" data-action="monarca-ok">OK Monarca</button>`)
+    : '';
+
   const effectiveness = c.effective
     ? `<span class="chip mini approved">Efetiva</span>`
     : (c.needsEffectiveness ? `<span class="chip mini">Revisão de efetividade</span>` : `<span class="chip mini">Efetividade pendente</span>`);
+
   const executionBadge = c.executionStatus ? `<span class="chip mini">${escapeHtml(c.executionStatus)}</span>` : '';
   const stageBadge = '';
   const oracleBadge = '';
@@ -929,7 +963,7 @@ function createCard(item, columnKey = '') {
       <span>${escapeHtml(c.owner)}</span>
       <span>${escapeHtml(c.eta)} ago</span>
     </div>
-    <div class="approve-row">${stageBadge} ${approveBtn} ${effectiveness} ${executionBadge} ${oracleBadge}</div>
+    <div class="approve-row">${stageBadge} ${typeBadge} ${riskBadge} ${approveBtn} ${monarcaBtn} ${effectiveness} ${executionBadge} ${oracleBadge}</div>
     ${c.needsUserAction ? `<div class="empty-column" style="margin-top:8px">Ação necessária: ${escapeHtml(c.needsUserAction)}</div>` : ''}
     <div class="card-actions">${clarifyBtn} ${runBtn} ${deleteBtn}</div>
   `;
@@ -946,7 +980,37 @@ function createCard(item, columnKey = '') {
       restoreBoard(before);
       return;
     }
+    // Persist locally in boardState too (UI is not the source of truth, but helps avoid drift)
+    for (const col of boardState) {
+      const it = (col.items || []).find((x) => normalizeCard(x).cardId === (card.dataset.cardId || card.dataset.missionId));
+      if (it) { it.approved = true; }
+    }
+
     addLiveEvent('Jarvis aprovou missão', card.dataset.title || 'Missão sem título', true, { missionKey: card.dataset.cardId || card.dataset.title, missionTitle: card.dataset.title });
+  });
+
+  card.querySelector('[data-action="monarca-ok"]')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const before = snapshotBoard();
+
+    card.dataset.monarcaOk = '1';
+    for (const col of boardState) {
+      const it = (col.items || []).find((x) => normalizeCard(x).cardId === (card.dataset.cardId || card.dataset.missionId));
+      if (it) { it.monarcaOk = true; }
+    }
+
+    const ok = await persistBoardState('monarca_ok', { missionId: card.dataset.missionId || card.dataset.cardId, title: card.dataset.title });
+    if (STRICT_PERSISTENCE && !ok) {
+      showToast('Falha ao persistir OK do Monarca no backend');
+      restoreBoard(before);
+      return;
+    }
+
+    // Reload to refresh chips
+    const dashboard = await loadDashboard();
+    renderBoard(dashboard.columns || fallbackData.columns);
+
+    addLiveEvent('Monarca OK', card.dataset.title || 'Missão sem título', true, { missionKey: card.dataset.cardId || card.dataset.title, missionTitle: card.dataset.title });
   });
 
   card.querySelector('[data-action="clarify"]')?.addEventListener('click', async (e) => {
@@ -1661,8 +1725,17 @@ function setupUI() {
   sendBroadcastBtn?.addEventListener('click', async () => {
     const requestedTitle = missionTitleInput.value.trim();
     const desc = missionDescInput.value.trim();
+    const missionType = (missionTypeInput?.value || 'Feature').trim() || 'Feature';
+    const riskLevel = Number(missionRiskInput?.value || 0);
+    const successCriteria = (missionSuccessInput?.value || '').trim();
+    const proofExpected = (missionProofInput?.value || '').trim();
+
     if (!desc) {
-      notify('Preencha a descrição da missão.');
+      notify('Preencha a descrição (contexto) da missão.');
+      return;
+    }
+    if (!successCriteria) {
+      notify('Preencha os critérios de sucesso.');
       return;
     }
 
@@ -1674,17 +1747,26 @@ function setupUI() {
         : { impactRevenue: 3, impactAutonomy: 3, urgency: 3 };
 
     const missionId = makeMissionId();
+    const contractBlock = `\n\n---\n[CONTRATO]\nTIPO: ${missionType}\nRISCO: ${riskLevel}\nCRITERIOS_DE_SUCESSO:\n${successCriteria}\n${proofExpected ? `\nPROOF_ESPERADO: ${proofExpected}` : ''}\n---\n`;
+
     const card = {
       id: missionId,
       missionId,
       cardId: missionId,
       title: requestedTitle || missionId,
       requestedTitle,
-      desc,
+      desc: desc + contractBlock,
       priority,
       owner: 'Stark',
       eta: missionEtaInput.value.trim() || 'agora',
       ...weights,
+
+      missionType,
+      riskLevel,
+      successCriteria,
+      proofExpected,
+      monarcaOk: false,
+
       approved: false,
       kind: '',
       targetFile: '',
@@ -1713,6 +1795,10 @@ function setupUI() {
 
     missionTitleInput.value = '';
     missionDescInput.value = '';
+    if (missionSuccessInput) missionSuccessInput.value = '';
+    if (missionProofInput) missionProofInput.value = '';
+    if (missionTypeInput) missionTypeInput.value = 'Feature';
+    if (missionRiskInput) missionRiskInput.value = '0';
     broadcastDrawer.classList.remove('open');
   });
 

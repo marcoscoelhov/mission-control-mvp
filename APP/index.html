@@ -144,9 +144,42 @@
           <input type="text" id="mission-title" placeholder="Rótulo humano (o sistema nomeia como #task_N)" />
         </label>
         <label class="field">
-          <span>Descrição</span>
-          <textarea id="mission-desc" rows="5" placeholder="Contexto, objetivo e critérios de sucesso"></textarea>
+          <span>Descrição (contexto)</span>
+          <textarea id="mission-desc" rows="4" placeholder="Contexto suficiente para executar"></textarea>
         </label>
+
+        <div class="meta-grid">
+          <label class="field">
+            <span>Tipo</span>
+            <select id="mission-type">
+              <option value="Feature" selected>Feature</option>
+              <option value="Bugfix">Bugfix</option>
+              <option value="Automacao">Automação</option>
+              <option value="Pesquisa">Pesquisa</option>
+              <option value="Monetizacao">Monetização</option>
+              <option value="Documentacao">Documentação</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Risco</span>
+            <select id="mission-risk">
+              <option value="0" selected>0 — interno/seguro (auto)</option>
+              <option value="1">1 — precisa review Jarvis</option>
+              <option value="2">2 — externo (OK Monarca)</option>
+            </select>
+          </label>
+        </div>
+
+        <label class="field">
+          <span>Critérios de sucesso (obrigatório)</span>
+          <textarea id="mission-success" rows="3" placeholder="Ex.: 1) X funciona 2) PROOF anexada 3) Sem regressão"></textarea>
+        </label>
+
+        <label class="field">
+          <span>PROOF esperado (opcional)</span>
+          <input type="text" id="mission-proof" placeholder="Ex.: output do comando, link, diff/commit hash, screenshot" />
+        </label>
+
         <div class="meta-grid">
           <label class="field">
             <span>Prioridade</span>
