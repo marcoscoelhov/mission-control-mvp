@@ -184,6 +184,7 @@ function refreshMobileFilterLabels(counts) {
 
 function notify(msg) {
   console.log(msg);
+  showToast(String(msg || ''));
 }
 
 function showToast(text) {
