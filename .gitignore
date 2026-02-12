@@ -31,3 +31,16 @@ APP/*.log
 # Optional local overrides
 APP/*.local.*
 .env
+
+# Scratch
+tmp/
+
+# Local symlink to global reference (don’t commit)
+SQUAD_REFERENCE.md
+
+# Generated intel/drafts/qa artifacts (keep README templates committed)
+intel/DAILY-INTEL.md
+intel/data/[0-9][0-9][0-9][0-9]-*.json
+
+drafts/**/[0-9][0-9][0-9][0-9]-*.md
+qa/REPORTS/[0-9][0-9][0-9][0-9]-*.md
