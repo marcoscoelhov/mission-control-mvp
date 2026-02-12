@@ -60,17 +60,7 @@ def mission_guard_prefix():
     return f"Siga estritamente esta missão do Reino antes de executar: {txt}"
 
 
-def dispatch_mission_to_openclaw(mission):
-    title = mission.get('title', 'Missão sem título')
-    desc = mission.get('desc', '')
-    owner = mission.get('owner', 'Stark')
-    guard = mission_guard_prefix()
-    mission_id = mission.get('id', 'unknown')
-    text = (
-        f"[MISSION CONTROL] Execução autônoma: {title} | missionId={mission_id} | Responsável: {owner}. "
-        f"Contexto: {desc}. {guard}"
-    )
-
+def owner_to_agent_id(owner):
     owner_map = {
         'stark': 'stark',
         'thanos': 'thanos',
@@ -80,12 +70,94 @@ def dispatch_mission_to_openclaw(mission):
         'oráculo': 'oraculo',
         'oraculo': 'oraculo',
     }
-    agent_id = owner_map.get(str(owner).strip().lower(), 'stark')
+    return owner_map.get(str(owner).strip().lower(), 'stark')
 
-    # Prefer explicit agent dispatch (real delegation). Fallback to system event.
+
+def mission_openclaw_text(mission):
+    title = mission.get('requestedTitle') or mission.get('title') or 'Missão sem título'
+    desc = mission.get('desc', '')
+    owner = mission.get('owner', 'Stark')
+    mission_id = mission.get('id', 'unknown')
+    guard = mission_guard_prefix()
+    return (
+        f"[MISSION CONTROL] Missão: {title} | missionId={mission_id} | Responsável: {owner}. "
+        f"Contexto: {desc}. {guard}"
+    )
+
+
+def run_openclaw_agent_sync(agent_id, session_id, message_text, timeout_seconds=240):
+    """Run an OpenClaw agent synchronously and capture output as evidence.
+
+    IMPORTANT: Uses an explicit session id so we don't reuse the agent's main chat
+    (which may be huge and slow)."""
+    cmd = [
+        'openclaw', 'agent',
+        '--agent', str(agent_id),
+        '--session-id', str(session_id),
+        '--message', str(message_text),
+        '--thinking', 'low',
+        '--timeout', str(int(timeout_seconds)),
+        '--json'
+    ]
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=int(timeout_seconds) + 20)
+
+    stdout = (r.stdout or '').strip()
+    stderr = (r.stderr or '').strip()
+
+    parsed = None
+    reply_text = ''
+    if stdout:
+        try:
+            parsed = json.loads(stdout)
+        except Exception:
+            parsed = None
+
+    if isinstance(parsed, dict):
+        # best-effort: different versions may use different keys
+        for k in ['reply', 'text', 'message', 'output', 'content']:
+            if isinstance(parsed.get(k), str) and parsed.get(k).strip():
+                reply_text = parsed.get(k).strip()
+                break
+        if not reply_text:
+            # sometimes nested
+            for k in ['result', 'data']:
+                v = parsed.get(k)
+                if isinstance(v, dict):
+                    for kk in ['reply', 'text', 'message', 'output', 'content']:
+                        if isinstance(v.get(kk), str) and v.get(kk).strip():
+                            reply_text = v.get(kk).strip()
+                            break
+    else:
+        reply_text = stdout
+
+    ok = (r.returncode == 0)
+    evidence = []
+    if reply_text:
+        evidence.append(('LLM: ' + reply_text.replace('\n', ' ')[:900]).strip())
+    if stderr and not ok:
+        evidence.append(('stderr: ' + stderr.replace('\n', ' ')[:400]).strip())
+
+    return {
+        'ok': ok,
+        'returncode': r.returncode,
+        'reply': reply_text,
+        'stderr': stderr,
+        'evidence': evidence,
+    }
+
+
+def dispatch_mission_to_openclaw(mission):
+    """Legacy fire-and-forget dispatch (kept for compatibility).
+
+    NOTE: Prefer /api/missions/run for tracked execution + proof."""
+    owner = mission.get('owner', 'Stark')
+    agent_id = owner_to_agent_id(owner)
+    text = mission_openclaw_text(mission)
+    mission_id = mission.get('id', 'unknown')
+
     try:
         subprocess.Popen(
-            ['openclaw', 'agent', '--agent', agent_id, '--message', text, '--timeout', '120'],
+            ['openclaw', 'agent', '--agent', agent_id, '--session-id', str(mission_id), '--message', text, '--timeout', '120'],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -942,7 +1014,74 @@ class Handler(SimpleHTTPRequestHandler):
             save_data(data)
             return self._json(200, {'ok': True, 'missionId': mission_id, 'execution': ex, 'effective': mission['effective']})
 
+        if self.path == '/api/missions/run':
+            payload = self._read_json()
+            mission_id = str(payload.get('missionId') or '').strip()
+            if not mission_id:
+                return self._json(400, {'ok': False, 'error': 'missing_mission_id'})
+
+            data = load_data()
+            col, idx, mission = find_mission_ref(data, mission_id)
+            if mission is None:
+                return self._json(404, {'ok': False, 'error': 'mission_not_found'})
+
+            # mark running
+            ex = normalize_execution(mission)
+            ex['startedAt'] = now_ms()
+            ex['updatedAt'] = now_ms()
+            ex['endedAt'] = None
+            ex['status'] = 'running'
+            mission['execution'] = ex
+            mission['executionStatus'] = ex['status']
+            mission['effective'] = False
+            mission['needsEffectiveness'] = True
+            if col is not None and idx is not None:
+                col['items'][idx] = mission
+            append_trail_entry(mission_id, mission.get('title', 'Missão sem título'), 'Execução (LLM) iniciada.')
+            save_data(data)
+
+            owner = mission.get('owner', 'Stark')
+            agent_id = owner_to_agent_id(owner)
+            msg = mission_openclaw_text(mission)
+
+            try:
+                result = run_openclaw_agent_sync(agent_id=agent_id, session_id=mission_id, message_text=msg)
+            except Exception as e:
+                result = {'ok': False, 'evidence': [f'runner_error: {e}'], 'reply': ''}
+
+            # persist proof
+            ex = normalize_execution(mission)
+            ex['agent'] = agent_id
+            ex['sessionId'] = mission_id
+            ex['updatedAt'] = now_ms()
+            ex['endedAt'] = now_ms()
+            ex['status'] = 'effective' if result.get('ok') else 'failed'
+
+            evidence = list(dict.fromkeys((ex.get('evidence') or []) + (result.get('evidence') or [])))
+            ex['evidence'] = evidence
+            mission['execution'] = ex
+            mission['executionStatus'] = ex['status']
+            mission['effectEvidence'] = evidence
+            mission['effective'] = has_execution_proof(mission)
+            mission['needsEffectiveness'] = not mission['effective']
+            mission['needsUserAction'] = '' if mission['effective'] else 'Execução não confirmou efetividade. Ver evidências e reexecutar.'
+
+            if col is not None and idx is not None:
+                col['items'][idx] = mission
+
+            append_trail_entry(mission_id, mission.get('title', 'Missão sem título'), f"Execução (LLM) finalizada: {ex['status']} | evidências: {len(evidence)}")
+            save_data(data)
+
+            return self._json(200, {
+                'ok': mission['effective'],
+                'status': ex['status'],
+                'evidence': evidence,
+                'missionId': mission_id,
+                'execution': ex,
+            })
+
         if self.path == '/api/missions/execute':
+            # Deterministic local executors (kept for small automations / demos).
             payload = self._read_json()
             mission_id = str(payload.get('missionId') or '').strip()
             if not mission_id:
@@ -979,8 +1118,6 @@ class Handler(SimpleHTTPRequestHandler):
             mission['executed'] = bool(ok)
             mission['needsEffectiveness'] = not mission['effective']
             mission['needsUserAction'] = '' if mission['effective'] else needs_user_action
-
-            clarification_sent = False
 
             if col is not None and idx is not None:
                 col['items'][idx] = mission
@@ -1041,10 +1178,8 @@ class Handler(SimpleHTTPRequestHandler):
                 record_transition(data, mission_id or 'unknown', from_col, to_col, actor=owner, reason='autonomous_move', title=title, transition_id=transition_id)
                 append_trail_entry(mission_id or 'unknown', title, f"Fluxo autônomo: {from_col} → {to_col} (owner: {owner}).")
                 if str(to_col).lower() == 'in_progress':
-                    dispatch_payload = {'id': mission_id, 'title': title, 'desc': payload.get('desc', ''), 'owner': owner}
-                    dispatched = dispatch_mission_to_openclaw(dispatch_payload)
-                    dispatch_target = dispatch_payload.get('dispatchAgent', owner)
-                    append_trail_entry(mission_id or 'unknown', title, (f'Despacho real para OpenClaw enviado (agent: {dispatch_target}).' if dispatched else 'Falha ao despachar para OpenClaw.'))
+                    # Execution is now tracked via /api/missions/run (LLM) to ensure proof + timeline.
+                    append_trail_entry(mission_id or 'unknown', title, 'Entrou em In Progress — aguardando execução (LLM) rastreada.')
             elif action == 'clarification_reply':
                 from_c = payload.get('fromColumn', '?')
                 to_c = payload.get('toColumn', '?')

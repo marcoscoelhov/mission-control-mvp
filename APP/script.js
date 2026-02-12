@@ -650,9 +650,9 @@ async function deleteCardReal(missionId, title = '') {
   }
 }
 
-async function executeMissionReal(card) {
+async function runMissionReal(card) {
   try {
-    const res = await fetch('/api/missions/execute', {
+    const res = await fetch('/api/missions/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ missionId: card.id || card.cardId }),
@@ -908,6 +908,7 @@ function createCard(item, columnKey = '') {
   const stageBadge = '';
   const oracleBadge = '';
   const clarifyBtn = '';
+  const runBtn = `<button class="chip mini" data-action="run">Executar</button>`;
   const deleteBtn = `<button class="chip mini danger" data-action="delete">Excluir</button>`;
 
   card.innerHTML = `
@@ -926,7 +927,7 @@ function createCard(item, columnKey = '') {
     </div>
     <div class="approve-row">${stageBadge} ${approveBtn} ${effectiveness} ${executionBadge} ${oracleBadge}</div>
     ${c.needsUserAction ? `<div class="empty-column" style="margin-top:8px">Ação necessária: ${escapeHtml(c.needsUserAction)}</div>` : ''}
-    <div class="card-actions">${clarifyBtn} ${deleteBtn}</div>
+    <div class="card-actions">${clarifyBtn} ${runBtn} ${deleteBtn}</div>
   `;
 
   card.querySelector('[data-action="approve"]')?.addEventListener('click', async (e) => {
@@ -1006,6 +1007,38 @@ function createCard(item, columnKey = '') {
       missionKey: card.dataset.cardId || card.dataset.title,
       missionTitle: card.dataset.title,
     });
+  });
+
+  card.querySelector('[data-action="run"]')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+
+    const approved = card.dataset.approved === '1';
+    const stage = columnKey || card.closest('.column')?.dataset.column || '';
+    if (!approved && normalizeColumnKey(stage) !== 'inbox') {
+      showToast('Gate Jarvis: aprove a missão antes de executar.');
+      return;
+    }
+
+    showToast('Executando via LLM...');
+    const before = snapshotBoard();
+    const missionId = card.dataset.missionId || card.dataset.cardId;
+    const res = await runMissionReal({ id: missionId, cardId: missionId });
+
+    if (STRICT_PERSISTENCE && !res.ok) {
+      showToast('Execução falhou (sem proof).');
+      restoreBoard(before);
+      return;
+    }
+
+    const dashboard = await loadDashboard();
+    ingestDashboardTransitions(dashboard);
+    renderBoard(dashboard.columns || fallbackData.columns);
+
+    selectedMissionKey = missionId;
+    renderLiveFeed();
+    await renderMissionHistory(missionId);
+
+    addLiveEvent('Execução (LLM)', `${card.dataset.title}: ${res.status || 'ok'}`, true, { missionKey: missionId, missionTitle: card.dataset.title });
   });
 
   card.querySelector('[data-action="delete"]')?.addEventListener('click', async (e) => {
@@ -1421,7 +1454,7 @@ async function autonomousTick() {
     const first = normalizeCard(inProgress.items[0]);
     if (!first.effective) {
       const before = snapshotBoard();
-      const exec = await executeMissionReal(first);
+      const exec = await runMissionReal(first);
       if (!exec.ok) {
         const status = exec.status || 'failed';
         const needsUserAction = exec.needsUserAction || 'Defina melhor o escopo e critério de sucesso.';
