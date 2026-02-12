@@ -91,10 +91,13 @@ body {
   box-shadow: 0 0 12px var(--brand);
 }
 
-.brand h1 {
+.brand h1,
+.brand-title {
   margin: 0;
   letter-spacing: 0.14em;
   font-size: 13px;
+  text-transform: uppercase;
+  font-weight: 700;
 }
 
 .badge {
@@ -1099,7 +1102,8 @@ body.autonomous-on #auto-delegate {
     top: 4px;
   }
 
-  .brand h1 {
+  .brand h1,
+  .brand-title {
     font-size: 11px;
     letter-spacing: 0.08em;
   }
